@@ -146,9 +146,10 @@ export class GeminiAnalyzer {
     /**
      * Step 1: Use Google Search to get domain reputation info
      */
-    private async doGoogleSearch(url: string): Promise<string | null> {
+    private async doGoogleSearch(url: string, useFallback: boolean = false): Promise<string | null> {
         try {
             const domain = new URL(url).hostname;
+            const model = useFallback ? GEMINI.FALLBACK_MODEL : GEMINI.MODEL;
             const prompt = `Search for information about the domain "${domain}". 
 Find:
 1. Is this a legitimate website? 
@@ -165,7 +166,7 @@ Search queries to try:
 Summarize what you find in a brief report.`;
 
             const response = await this.client!.models.generateContent({
-                model: GEMINI.MODEL,
+                model: model,
                 contents: prompt,
                 config: {
                     tools: [{ googleSearch: {} }],
@@ -174,7 +175,13 @@ Summarize what you find in a brief report.`;
             });
 
             return response.text || null;
-        } catch (error) {
+        } catch (error: any) {
+            // Check for rate limit error (429)
+            if (error?.status === 429 && !useFallback) {
+                console.log(`[Gemini] Rate limited on search, falling back to ${GEMINI.FALLBACK_MODEL}...`);
+                await new Promise(resolve => setTimeout(resolve, 500));
+                return this.doGoogleSearch(url, true);
+            }
             console.warn('[Gemini] Google Search step failed:', error);
             return null;
         }
@@ -183,8 +190,9 @@ Summarize what you find in a brief report.`;
     /**
      * Step 2: Use URL Context to fetch and analyze page content
      */
-    private async doUrlFetch(url: string): Promise<string | null> {
+    private async doUrlFetch(url: string, useFallback: boolean = false): Promise<string | null> {
         try {
+            const model = useFallback ? GEMINI.FALLBACK_MODEL : GEMINI.MODEL;
             const prompt = `Fetch the content from this URL and describe what you see: ${url}
 
 Analyze:
@@ -199,7 +207,7 @@ Analyze:
 Provide a factual summary of the page content.`;
 
             const response = await this.client!.models.generateContent({
-                model: GEMINI.MODEL,
+                model: model,
                 contents: prompt,
                 config: {
                     tools: [{ urlContext: {} }],
@@ -214,7 +222,13 @@ Provide a factual summary of the page content.`;
             }
 
             return response.text || null;
-        } catch (error) {
+        } catch (error: any) {
+            // Check for rate limit error (429)
+            if (error?.status === 429 && !useFallback) {
+                console.log(`[Gemini] Rate limited on fetch, falling back to ${GEMINI.FALLBACK_MODEL}...`);
+                await new Promise(resolve => setTimeout(resolve, 500));
+                return this.doUrlFetch(url, true);
+            }
             console.warn('[Gemini] URL fetch step failed:', error);
             return null;
         }
@@ -230,46 +244,59 @@ Provide a factual summary of the page content.`;
         context?: {
             referrer?: string | null;
             redirectChain?: string[];
-        }
+        },
+        useFallback: boolean = false
     ): Promise<GeminiThreatAnalysis | null> {
         const prompt = this.buildFinalAnalysisPrompt(url, searchResult, contentResult, context);
-
-        const response = await this.client!.models.generateContent({
-            model: GEMINI.MODEL,
-            contents: prompt,
-            config: {
-                // No tools needed - we already have all the information
-                responseMimeType: GEMINI.RESPONSE_MIME_TYPE,
-                responseJsonSchema: THREAT_ANALYSIS_SCHEMA,
-                temperature: GEMINI.TEMPERATURE
-            }
-        });
-
-        const text = response.text;
-        if (!text) {
-            console.warn('[Gemini] Empty response from final analysis');
-            return null;
-        }
+        const model = useFallback ? GEMINI.FALLBACK_MODEL : GEMINI.MODEL;
 
         try {
-            return JSON.parse(text) as GeminiThreatAnalysis;
-        } catch (e) {
-            console.warn('[Gemini] Failed to parse final analysis JSON:', e);
-            // Try to extract JSON from the text
-            const jsonMatch = text.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-                try {
-                    return JSON.parse(jsonMatch[0]) as GeminiThreatAnalysis;
-                } catch {
-                    // Fall through to default
+            const response = await this.client!.models.generateContent({
+                model: model,
+                contents: prompt,
+                config: {
+                    // No tools needed - we already have all the information
+                    responseMimeType: GEMINI.RESPONSE_MIME_TYPE,
+                    responseJsonSchema: THREAT_ANALYSIS_SCHEMA,
+                    temperature: GEMINI.TEMPERATURE
                 }
+            });
+
+            const text = response.text;
+            if (!text) {
+                console.warn('[Gemini] Empty response from final analysis');
+                return null;
             }
-            return {
-                threatType: 'safe',
-                confidence: 0.5,
-                indicators: [{ type: 'analysis_error', description: 'Could not complete analysis', severity: 'low' }],
-                recommendation: 'warn'
-            };
+
+            try {
+                return JSON.parse(text) as GeminiThreatAnalysis;
+            } catch (e) {
+                console.warn('[Gemini] Failed to parse final analysis JSON:', e);
+                // Try to extract JSON from the text
+                const jsonMatch = text.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    try {
+                        return JSON.parse(jsonMatch[0]) as GeminiThreatAnalysis;
+                    } catch {
+                        // Fall through to default
+                    }
+                }
+                return {
+                    threatType: 'safe',
+                    confidence: 0.5,
+                    indicators: [{ type: 'analysis_error', description: 'Could not complete analysis', severity: 'low' }],
+                    recommendation: 'warn'
+                };
+            }
+        } catch (error: any) {
+            // Check for rate limit error (429)
+            if (error?.status === 429 && !useFallback) {
+                console.log(`[Gemini] Rate limited on ${GEMINI.MODEL}, falling back to ${GEMINI.FALLBACK_MODEL}...`);
+                // Wait a bit before retrying with fallback model
+                await new Promise(resolve => setTimeout(resolve, 500));
+                return this.doFinalAnalysis(url, searchResult, contentResult, context, true);
+            }
+            throw error; // Re-throw if not rate limited or already using fallback
         }
     }
 

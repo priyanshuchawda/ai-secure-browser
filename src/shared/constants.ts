@@ -49,8 +49,10 @@ export const THRESHOLDS = {
 // ============================================
 
 export const GEMINI = {
-    /** Model to use for threat analysis */
+    /** Primary model to use for threat analysis */
     MODEL: 'gemini-2.5-flash',
+    /** Fallback model when primary hits rate limits */
+    FALLBACK_MODEL: 'gemini-2.5-flash-lite',
     /** Max tokens for response */
     MAX_OUTPUT_TOKENS: 1024,
     /** Temperature for deterministic outputs */
