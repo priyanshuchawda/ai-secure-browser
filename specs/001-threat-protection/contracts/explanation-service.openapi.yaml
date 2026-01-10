@@ -1,0 +1,131 @@
+openapi: 3.0.0
+info:
+  title: Explanation Service API
+  version: 1.0.0
+  description: |
+    Generates user-friendly threat explanations.
+    Maps to FR-004, FR-007, SC-004 (comprehension requirement).
+
+servers:
+  - url: 'internal://explanation-service'
+
+paths:
+  /explain:
+    post:
+      summary: Generate threat explanation
+      operationId: generateExplanation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExplanationRequest'
+      responses:
+        '200':
+          description: Explanation generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WarningDisplay'
+
+components:
+  schemas:
+    ExplanationRequest:
+      type: object
+      required:
+        - assessment
+        - decision
+      properties:
+        assessment:
+          type: object
+          description: ThreatAssessment
+        decision:
+          type: object
+          description: SecurityDecision
+
+    WarningDisplay:
+      type: object
+      required:
+        - id
+        - threatType
+        - severity
+        - explanation
+        - indicators
+        - recommendedAction
+        - alternativeActions
+      properties:
+        id:
+          type: string
+          format: uuid
+        threatType:
+          type: string
+          enum:
+            - phishing
+            - malware
+            - social_engineering
+        severity:
+          type: string
+          enum:
+            - critical
+            - high
+            - medium
+            - low
+        explanation:
+          type: string
+          description: Plain-language threat description
+          example: 'This website is pretending to be PayPal to steal your password.'
+        indicators:
+          type: array
+          items:
+            $ref: '#/components/schemas/IndicatorExplanation'
+        recommendedAction:
+          type: string
+          example: 'Go back to stay safe'
+        alternativeActions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Action'
+
+    IndicatorExplanation:
+      type: object
+      required:
+        - icon
+        - title
+        - description
+        - severity
+      properties:
+        icon:
+          type: string
+          example: 'domain-mismatch'
+        title:
+          type: string
+          example: 'Fake Website Address'
+        description:
+          type: string
+          example: 'Real PayPal: paypal.com → This fake site: paypa1.com'
+        severity:
+          type: string
+          enum:
+            - critical
+            - high
+            - medium
+            - low
+
+    Action:
+      type: object
+      required:
+        - label
+        - type
+        - requiresConfirmation
+      properties:
+        label:
+          type: string
+          example: 'Go back to safety'
+        type:
+          type: string
+          enum:
+            - go_back
+            - report_false_positive
+            - proceed_anyway
+        requiresConfirmation:
+          type: boolean

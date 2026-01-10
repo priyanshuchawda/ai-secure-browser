@@ -1,0 +1,129 @@
+openapi: 3.0.0
+info:
+  title: Decision Engine API
+  version: 1.0.0
+  description: |
+    Separates AI reasoning from enforcement logic per Constitution Principle IV.
+    Makes deterministic security decisions based on threat assessments.
+    Maps to FR-003, FR-005, FR-016.
+
+servers:
+  - url: 'internal://decision-engine'
+
+paths:
+  /decide:
+    post:
+      summary: Make security decision
+      operationId: makeDecision
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecisionRequest'
+      responses:
+        '200':
+          description: Decision made successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityDecision'
+
+  /override:
+    post:
+      summary: Record user override decision
+      operationId: recordOverride
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OverrideRequest'
+      responses:
+        '200':
+          description: Override recorded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OverrideResult'
+
+components:
+  schemas:
+    DecisionRequest:
+      type: object
+      required:
+        - assessment
+      properties:
+        assessment:
+          $ref: '#/components/schemas/ThreatAssessment'
+
+    SecurityDecision:
+      type: object
+      required:
+        - id
+        - action
+        - rationale
+        - overridable
+        - requiresExplanation
+        - riskLevel
+      properties:
+        id:
+          type: string
+          format: uuid
+        assessmentId:
+          type: string
+          format: uuid
+        action:
+          type: string
+          enum:
+            - block
+            - warn
+            - allow
+            - allow_with_indicator
+        rationale:
+          type: string
+          description: Why this decision was made
+        overridable:
+          type: boolean
+        requiresExplanation:
+          type: boolean
+        riskLevel:
+          type: string
+          enum:
+            - extreme
+            - high
+            - medium
+            - low
+            - safe
+        timestamp:
+          type: string
+          format: date-time
+
+    OverrideRequest:
+      type: object
+      required:
+        - decisionId
+        - reason
+        - acknowledgedRisks
+      properties:
+        decisionId:
+          type: string
+          format: uuid
+        reason:
+          type: string
+          minLength: 1
+        acknowledgedRisks:
+          type: boolean
+
+    OverrideResult:
+      type: object
+      properties:
+        recorded:
+          type: boolean
+        logId:
+          type: string
+          format: uuid
+
+    ThreatAssessment:
+      type: object
+      description: Reference to threat-analysis-engine schema

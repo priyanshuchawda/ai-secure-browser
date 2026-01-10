@@ -1,0 +1,91 @@
+openapi: 3.0.0
+info:
+  title: Request Interceptor API
+  version: 1.0.0
+  description: |
+    Intercepts all navigation requests before page load.
+    Maps to FR-001 (interception requirement).
+
+servers:
+  - url: 'internal://request-interceptor'
+
+paths:
+  /intercept:
+    post:
+      summary: Process intercepted navigation
+      operationId: interceptRequest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NavigationRequest'
+      responses:
+        '200':
+          description: Interception processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InterceptionResult'
+
+components:
+  schemas:
+    NavigationRequest:
+      type: object
+      required:
+        - id
+        - url
+        - triggerType
+        - timestamp
+      properties:
+        id:
+          type: string
+          format: uuid
+        url:
+          type: string
+          format: uri
+        referrer:
+          type: string
+          format: uri
+          nullable: true
+        triggerType:
+          type: string
+          enum:
+            - link_click
+            - address_bar
+            - form_submit
+            - redirect
+            - bookmark
+            - history
+            - script
+        timestamp:
+          type: string
+          format: date-time
+        tabId:
+          type: string
+        frameId:
+          type: integer
+        redirectChain:
+          type: array
+          items:
+            type: string
+            format: uri
+          maxItems: 10
+        method:
+          type: string
+          enum:
+            - GET
+            - POST
+
+    InterceptionResult:
+      type: object
+      properties:
+        allowed:
+          type: boolean
+        blocked:
+          type: boolean
+        warningShown:
+          type: boolean
+        enforcementId:
+          type: string
+          format: uuid

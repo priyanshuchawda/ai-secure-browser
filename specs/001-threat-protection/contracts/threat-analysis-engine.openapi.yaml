@@ -1,0 +1,270 @@
+openapi: 3.0.0
+info:
+  title: Threat Analysis Engine API
+  version: 1.0.0
+  description: |
+    Internal API for analyzing URLs and web requests for security threats.
+    Combines local rule-based detection with AI-powered analysis.
+    Maps to FR-002, FR-010, SC-005 (threat analysis requirements).
+
+servers:
+  - url: 'internal://threat-analysis-engine'
+    description: Main process internal API
+
+paths:
+  /analyze:
+    post:
+      summary: Analyze a URL for threats
+      operationId: analyzeUrl
+      description: |
+        Performs comprehensive threat analysis using:
+        1. Cache lookup (fastest path)
+        2. Local rule-based detection
+        3. AI analysis (if needed)
+        Returns within 1 second for 99% of requests (SC-005).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalysisRequest'
+      responses:
+        '200':
+          description: Analysis completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThreatAssessment'
+        '408':
+          description: Analysis timeout (exceeded 10 seconds)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal analysis error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /analyze/batch:
+    post:
+      summary: Analyze multiple URLs in parallel
+      operationId: analyzeBatch
+      description: |
+        Optimized for preloading/prefetching scenarios.
+        Analyzes up to 10 URLs concurrently.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                urls:
+                  type: array
+                  items:
+                    type: string
+                    format: uri
+                  maxItems: 10
+              required:
+                - urls
+      responses:
+        '200':
+          description: Batch analysis completed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ThreatAssessment'
+
+components:
+  schemas:
+    AnalysisRequest:
+      type: object
+      required:
+        - url
+        - requestId
+      properties:
+        url:
+          type: string
+          format: uri
+          description: Full URL to analyze
+          example: 'https://paypa1-secure.com/login'
+        requestId:
+          type: string
+          format: uuid
+          description: Unique navigation request identifier
+        context:
+          $ref: '#/components/schemas/RequestContext'
+        options:
+          $ref: '#/components/schemas/AnalysisOptions'
+
+    RequestContext:
+      type: object
+      description: Additional context about the navigation request
+      properties:
+        referrer:
+          type: string
+          format: uri
+          nullable: true
+        triggerType:
+          type: string
+          enum:
+            - link_click
+            - address_bar
+            - form_submit
+            - redirect
+            - bookmark
+            - history
+            - script
+        redirectChain:
+          type: array
+          items:
+            type: string
+            format: uri
+          maxItems: 10
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+
+    AnalysisOptions:
+      type: object
+      description: Analysis configuration
+      properties:
+        forceAiAnalysis:
+          type: boolean
+          default: false
+          description: Skip cache and force AI call (for testing)
+        maxLatency:
+          type: integer
+          default: 10000
+          description: Maximum analysis time in milliseconds
+        offlineMode:
+          type: boolean
+          default: false
+          description: Use only cache and local rules
+
+    ThreatAssessment:
+      type: object
+      required:
+        - id
+        - requestId
+        - url
+        - confidence
+        - indicators
+        - analysisMethod
+        - timestamp
+      properties:
+        id:
+          type: string
+          format: uuid
+        requestId:
+          type: string
+          format: uuid
+        url:
+          type: string
+          format: uri
+        threatType:
+          type: string
+          enum:
+            - phishing
+            - malware
+            - social_engineering
+          nullable: true
+          description: Null if URL is safe
+        confidence:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          description: Confidence in threat verdict (0=uncertain, 1=definite)
+        indicators:
+          type: array
+          items:
+            $ref: '#/components/schemas/ThreatIndicator'
+        analysisMethod:
+          type: string
+          enum:
+            - cache
+            - local_rule
+            - ai
+            - offline
+          description: How verdict was determined
+        aiModelUsed:
+          type: string
+          nullable: true
+          example: 'gemini-2.5-flash'
+        analysisLatency:
+          type: integer
+          description: Milliseconds to complete analysis
+          example: 523
+        timestamp:
+          type: string
+          format: date-time
+
+    ThreatIndicator:
+      type: object
+      required:
+        - type
+        - description
+        - severity
+        - details
+      properties:
+        type:
+          type: string
+          enum:
+            - domain_typo
+            - domain_homograph
+            - suspicious_tld
+            - new_domain
+            - credential_form
+            - js_obfuscation
+            - drive_by_download
+            - fake_urgency
+            - impersonation
+            - deceptive_consent
+            - known_malicious
+        description:
+          type: string
+          maxLength: 200
+          description: Human-readable explanation
+          example: 'Domain paypa1.com mimics paypal.com'
+        severity:
+          type: string
+          enum:
+            - critical
+            - high
+            - medium
+            - low
+            - info
+        details:
+          type: object
+          description: Structured evidence (type-specific)
+          additionalProperties: true
+          example:
+            legitimate: 'paypal.com'
+            typo: 'paypa1.com'
+            distance: 1
+
+    Error:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          example: 'ANALYSIS_TIMEOUT'
+        message:
+          type: string
+          example: 'Threat analysis exceeded 10 second timeout'
+        details:
+          type: object
+          additionalProperties: true
