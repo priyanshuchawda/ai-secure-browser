@@ -1,21 +1,21 @@
-# 🛡️ AI Secure Browser
+# AI Secure Browser
 
-An intelligent web browser with **real-time phishing and threat detection** powered by Google Gemini AI. The browser verifies every URL using a multi-step analysis pipeline that combines Google Search reputation checks with actual page content analysis.
+An intelligent web browser with **real-time phishing and threat detection** powered by AI. The browser verifies every URL and download using a multi-step analysis pipeline that combines web search reputation checks with actual page content analysis.
 
 ![Electron](https://img.shields.io/badge/Electron-31-47848F?style=flat-square&logo=electron)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.3-3178C6?style=flat-square&logo=typescript)
-![Gemini](https://img.shields.io/badge/Gemini-2.5_Flash-8E75B2?style=flat-square&logo=google)
+![AI](https://img.shields.io/badge/AI-Powered-8E75B2?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
 
-## ✨ Features
+## Features
 
-### 🔍 Three-Step AI Analysis Pipeline
+### URL Threat Analysis (Three-Step AI Pipeline)
 
 Every URL goes through a comprehensive verification process:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  STEP 1: Google Search                                       │
+│  STEP 1: Web Search                                          │
 │  Search for domain reputation, reviews, and safety reports  │
 └──────────────────────────┬──────────────────────────────────┘
                            ▼
@@ -30,7 +30,59 @@ Every URL goes through a comprehensive verification process:
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 🎯 Threat Detection Capabilities
+### Download Protection (NEW!)
+
+AI-powered download security that intercepts and analyzes every file before download:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  DOWNLOAD PROTECTION FLOW                                    │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  User clicks download → Pause & Analyze                      │
+│         │                                                    │
+│         ▼                                                    │
+│  ┌─────────────────────┐     ┌──────────────────────────┐   │
+│  │ Quick Safety Check  │────►│ Dangerous Extension?     │   │
+│  │ (Local Rules)       │     │ (.exe, .scr, .bat, etc.) │   │
+│  └──────────┬──────────┘     └──────────────────────────┘   │
+│             │                                                │
+│             ▼                                                │
+│  ┌─────────────────────┐                                    │
+│  │ AI Risk Analysis    │                                    │
+│  │ - Source reputation │                                    │
+│  │ - File type context │                                    │
+│  │ - Download behavior │                                    │
+│  └──────────┬──────────┘                                    │
+│             │                                                │
+│             ▼                                                │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │  SAFE → Proceed | WARNING → User decides | BLOCK    │    │
+│  └─────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### Download Risk Levels
+
+| Risk Level | Extension Examples | Action |
+|------------|-------------------|--------|
+| **Safe** | .pdf, .jpg, .mp3, .docx | Auto-proceed |
+| **Low** | .zip, .rar, .7z | Show panel, allow proceed |
+| **Medium** | .jar, .py, .sh | Show warning, allow proceed |
+| **High** | .msi, .dll, .reg | Show warning, allow proceed |
+| **Critical** | .exe, .scr, .bat (untrusted) | Block (no override) |
+
+### Browser Navigation
+
+Full browser-like navigation with webview integration:
+
+- **Back/Forward** - Navigate through browser history
+- **Refresh** - Reload current page
+- **Home** - Return to welcome screen
+- **URL Bar** - Real-time URL tracking
+- **Webview** - Websites load inside app, keeping navigation always visible
+
+### Threat Detection Capabilities
 
 | Threat Type | Detection Method |
 |-------------|-----------------|
@@ -38,20 +90,22 @@ Every URL goes through a comprehensive verification process:
 | **Malware** | Suspicious downloads, malicious file extensions |
 | **Social Engineering** | Urgency tactics, fear-based messaging, too-good-to-be-true offers |
 | **Homograph Attacks** | Unicode lookalike characters, character substitution |
+| **Dangerous Downloads** | Executable analysis, source reputation, double extension detection |
 
-### 🧠 Smart Decision Making
+### Smart Decision Making
 
-- **AI Override Logic**: When Gemini verifies a site as safe with high confidence, it overrides local false positives
+- **AI Override Logic**: When AI verifies a site as safe with high confidence, it overrides local false positives
 - **Zero False Positives on Legitimate Sites**: Sites like `chat.com` won't be blocked just because they're similar to `chase.com`
 - **Conservative Blocking**: Only blocks sites with actual evidence of malicious intent
+- **Download Intelligence**: Context-aware download analysis (executables from GitHub = safe, from unknown domain = risky)
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
 - Node.js 18+
 - npm or yarn
-- Google Gemini API Key
+- AI API Key (Gemini)
 
 ### Installation
 
@@ -78,13 +132,13 @@ npm run dev
 npm run build
 ```
 
-## 🔧 Configuration
+## Configuration
 
 ### Environment Variables
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `GEMINI_API_KEY` | Your Google Gemini API key | ✅ Yes |
+| `GEMINI_API_KEY` | Your Gemini AI API key | Yes |
 
 ### Analysis Thresholds
 
@@ -101,7 +155,7 @@ export const PERFORMANCE = {
 };
 ```
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 ai-secure-browser/
@@ -110,68 +164,91 @@ ai-secure-browser/
 │   │   ├── threat-analysis/
 │   │   │   ├── engine.ts              # Main analysis orchestrator
 │   │   │   ├── ai-analyzer/
-│   │   │   │   ├── gemini-client.ts   # 3-step Gemini analysis
+│   │   │   │   ├── gemini-client.ts   # 3-step AI analysis
 │   │   │   │   └── url-analyzer.ts    # URL content analysis
 │   │   │   ├── local-rules/
 │   │   │   │   └── phishing-detector.ts  # Pattern-based detection
 │   │   │   └── cache/
 │   │   │       └── cache-manager.ts   # Result caching
+│   │   ├── download-protection/       # NEW: Download security
+│   │   │   ├── download-rules.ts      # Extension risk classifications
+│   │   │   ├── ai-download-analyzer.ts # AI download analysis
+│   │   │   └── download-interceptor.ts # Download interception
 │   │   └── decision-engine/
 │   │       └── decision-engine.ts     # Threat → Action conversion
 │   ├── preload/
 │   │   └── index.ts                   # Secure IPC bridge
 │   └── renderer/
 │       └── browser-ui/                # Browser interface
+│           ├── main.ts                # UI logic
+│           └── styles.css             # Styling
 ├── src/
 │   └── shared/
 │       ├── types.ts                   # TypeScript interfaces
 │       ├── constants.ts               # Configuration
 │       └── utils.ts                   # Helper functions
 └── docs/
-    ├── gemini.md                      # Gemini API documentation
+    ├── gemini.md                      # AI API documentation
     └── gemini_structured.md           # Structured outputs guide
 ```
 
-## 📊 Analysis Flow
+## Analysis Flow
 
+### URL Analysis
 1. **Cache Check**: First, check if we've analyzed this domain before
 2. **Local Rules**: Quick pattern matching for obvious threats (typosquatting, homographs)
 3. **AI Analysis**: 
-   - **Google Search**: Verify domain reputation via web search
+   - **Web Search**: Verify domain reputation via web search
    - **URL Fetch**: Analyze actual page content
    - **Final Decision**: Combine both signals for accurate verdict
 4. **Decision Engine**: Convert threat assessment to action (allow/warn/block)
 
-## 🛡️ Security Features
+### Download Analysis
+1. **Intercept**: Pause download before it starts
+2. **Quick Check**: Local rules check file extension and source
+3. **AI Analysis**: Gemini analyzes file type, source reputation, and context
+4. **User Decision**: Show warning panel with risk assessment
+5. **Proceed/Cancel**: User decides based on analysis
+
+## Security Features
 
 - **Proactive Protection**: Every URL is analyzed before navigation
+- **Download Interception**: All downloads are scanned before allowing
 - **Multi-layered Detection**: Local rules + AI grounding + Content analysis
 - **False Positive Prevention**: AI can override local rule mistakes
-- **Transparent Decisions**: Warning pages explain why a site was blocked
-- **User Override**: Users can proceed to blocked sites at their own risk
+- **Transparent Decisions**: Warning pages explain why a site/download was blocked
+- **User Override**: Users can proceed to blocked sites at their own risk (except critical)
 
-## 🔬 Example Detections
+## Example Detections
 
+### URL Examples
 | URL | Result | Reason |
 |-----|--------|--------|
-| `https://paypa1.com` | 🚫 BLOCKED | Typosquatting PayPal (1→l) |
-| `https://chat.com` | ✅ ALLOWED | AI verified: Legitimate ChatGPT site |
-| `https://priyanshutech.xyz` | ✅ ALLOWED | AI verified: Personal portfolio, no threats |
-| `https://sbiiiiii.com` | 🚫 BLOCKED | Suspicious domain impersonating SBI bank |
+| `https://paypa1.com` | BLOCKED | Typosquatting PayPal (1→l) |
+| `https://chat.com` | ALLOWED | AI verified: Legitimate ChatGPT site |
+| `https://github.com` | ALLOWED | Trusted source |
 
-## 📝 API Reference
+### Download Examples
+| File | Source | Result | Reason |
+|------|--------|--------|--------|
+| `nodejs-installer.msi` | nodejs.org | SAFE | Trusted source |
+| `setup.exe` | unknown-downloads.xyz | BLOCKED | Unknown source, critical extension |
+| `document.pdf` | drive.google.com | SAFE | Safe extension, trusted source |
+| `invoice.pdf.exe` | any | BLOCKED | Double extension attack |
 
-### Gemini Client
+## API Reference
+
+### AI Client
 
 ```typescript
 // Three-step analysis
-const result = await geminiAnalyzer.analyze(url, {
+const result = await aiAnalyzer.analyze(url, {
     referrer: document.referrer,
     redirectChain: ['url1', 'url2']
 });
 
 // Result structure
-interface GeminiThreatAnalysis {
+interface AIThreatAnalysis {
     threatType: 'phishing' | 'malware' | 'social_engineering' | 'safe';
     confidence: number;  // 0.0 to 1.0
     indicators: ThreatIndicator[];
@@ -179,7 +256,65 @@ interface GeminiThreatAnalysis {
 }
 ```
 
-## 🤝 Contributing
+### Download Analyzer
+
+```typescript
+// Download analysis
+const analysis = await analyzeDownload({
+    fileName: 'setup.exe',
+    fileSize: 45000000,
+    mimeType: 'application/octet-stream',
+    url: 'https://example.com/setup.exe',
+    domain: 'example.com'
+});
+
+// Result structure
+interface DownloadAnalysis {
+    riskLevel: 'safe' | 'low' | 'medium' | 'high' | 'critical';
+    riskScore: number;  // 0-100
+    reasoning: string;
+    sourceReputation: 'trusted' | 'neutral' | 'suspicious' | 'malicious';
+    recommendations: string[];
+    shouldBlock: boolean;
+    allowOverride: boolean;
+}
+```
+
+## Roadmap
+
+### Current Features (v1.0)
+- [x] URL Threat Analysis (3-step AI pipeline)
+- [x] Download Protection with AI analysis
+- [x] Browser Navigation (Back, Forward, Refresh, Home)
+- [x] Website Safety Caching (LRU + Disk persistence)
+- [x] Download Progress Tracking & Notifications
+- [x] Auto-save downloads to default folder
+
+### Upcoming Features (v1.1)
+- [ ] **SHA256 Hash Checking** - Check file hashes against malware databases
+- [ ] **Sandboxing** - Isolate and analyze suspicious files in a sandbox
+- [ ] **Browser History** - Track and manage browsing history
+- [ ] **Bookmarks** - Save and organize favorite websites
+- [ ] **Password Manager** - Secure password storage with AI-powered security warnings
+- [ ] **Ad Blocker** - Block intrusive ads and trackers
+- [ ] **Cookie Management** - Smart cookie consent handling
+
+### Future Roadmap (v2.0)
+- [ ] **Extension Support** - Support for Chrome extensions
+- [ ] **Multi-tab Browsing** - Full tabbed browsing experience
+- [ ] **Sync Across Devices** - Cloud sync for settings, bookmarks, history
+- [ ] **VPN Integration** - Built-in VPN for private browsing
+- [ ] **Parental Controls** - Website filtering and time limits
+- [ ] **Dark Web Monitoring** - Alert when credentials are found on dark web
+- [ ] **AI-Powered Search** - Smart search with AI summarization
+
+### Experimental Features (Research)
+- [ ] **Real-time Content Analysis** - Analyze page content as you browse
+- [ ] **AI Form Detection** - Detect and warn about credential harvesting forms
+- [ ] **Network Traffic Analysis** - Monitor and analyze network traffic for threats
+- [ ] **Machine Learning Model** - On-device ML model for faster threat detection
+
+## Contributing
 
 Contributions are welcome! Please read our contributing guidelines before submitting PRs.
 
@@ -189,18 +324,18 @@ Contributions are welcome! Please read our contributing guidelines before submit
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
-- [Google Gemini AI](https://ai.google.dev/) for powerful threat analysis
+- [Gemini AI](https://deepmind.google/technologies/gemini/) for powerful threat analysis
 - [Electron](https://www.electronjs.org/) for cross-platform desktop support
 - [Vite](https://vitejs.dev/) for blazing fast development
 
 ---
 
 <p align="center">
-  Made with ❤️ by <a href="https://github.com/priyanshuchawda">Priyanshu Chawda</a>
+  Made with love by <a href="https://github.com/priyanshuchawda">Priyanshu Chawda</a>
 </p>

@@ -67,7 +67,7 @@ export class ThreatAnalysisEngine {
         // ===== Stage 3: AI Analysis (ALWAYS for all URLs) =====
         // We ALWAYS call AI to verify every URL, not just suspicious ones.
         // This ensures unknown domains get proper verification via:
-        // 1. Google Search for domain reputation
+        // 1. Web Search for domain reputation
         // 2. URL fetch for actual content analysis
         const shouldCallAI = (
             !request.options?.offlineMode &&
@@ -183,7 +183,7 @@ export class ThreatAnalysisEngine {
     /**
      * Create assessment from AI result
      * 
-     * IMPORTANT: When AI (with Google Search grounding) says a site is SAFE with high confidence,
+     * IMPORTANT: When AI (with Web Search grounding) says a site is SAFE with high confidence,
      * we trust the AI over local rules. This prevents false positives like:
      * - chat.com being blocked because it's similar to chase.com
      * - Local typosquatting detection doesn't have internet context
@@ -205,13 +205,13 @@ export class ThreatAnalysisEngine {
 
         // AI OVERRIDE LOGIC:
         // When AI says "safe" with high confidence (≥0.8), trust the AI.
-        // The AI has Google Search grounding and can verify legitimate domains.
+        // The AI has Web Search grounding and can verify legitimate domains.
         // This prevents false positives from local typosquatting detection
         // (e.g., chat.com being mistakenly flagged as a chase.com typo).
         const aiSaysDefinitelySafe = aiResult.threatType === 'safe' && aiResult.confidence >= 0.8;
 
         if (aiSaysDefinitelySafe) {
-            console.log(`[Engine] AI override: Site verified as SAFE by Gemini (confidence: ${aiResult.confidence})`);
+            console.log(`[Engine] AI override: Site verified as SAFE by AI (confidence: ${aiResult.confidence})`);
             // Return safe assessment, ignoring local indicators
             return {
                 id: generateUUID(),

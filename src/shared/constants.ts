@@ -61,7 +61,7 @@ export const GEMINI = {
     RESPONSE_MIME_TYPE: 'application/json',
     /** Enable URL Context tool for content fetching */
     URL_CONTEXT_ENABLED: true,
-    /** Enable Google Search tool for domain grounding */
+    /** Enable Web Search tool for domain grounding */
     GOOGLE_SEARCH_ENABLED: true,
     /** Confidence below this triggers deep content analysis */
     DEEP_ANALYSIS_THRESHOLD: 0.5,

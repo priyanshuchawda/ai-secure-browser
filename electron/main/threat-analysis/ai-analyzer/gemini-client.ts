@@ -3,7 +3,7 @@
  * Uses structured outputs per docs/gemini_structured.md
  * 
  * TWO-STEP SEQUENTIAL ANALYSIS:
- * 1. Google Search → Get domain reputation
+ * 1. Web Search → Get domain reputation
  * 2. URL Context (Fetch) → Get page content
  * 3. Final Analysis → Combine both signals for decision
  */
@@ -59,7 +59,7 @@ const THREAT_ANALYSIS_SCHEMA = {
 /**
  * Gemini AI Analyzer
  * Performs AI-powered threat analysis using Gemini 2.5 Flash
- * with sequential Google Search → URL Fetch → Final Decision flow
+ * with sequential Web Search → URL Fetch → Final Decision flow
  */
 export class GeminiAnalyzer {
     private client: GoogleGenAI | null = null;
@@ -76,17 +76,17 @@ export class GeminiAnalyzer {
         const apiKey = process.env.GEMINI_API_KEY;
 
         if (!apiKey || apiKey === 'your_gemini_api_key_here') {
-            console.warn('[Gemini] API key not configured. AI analysis will be disabled.');
-            console.warn('[Gemini] Set GEMINI_API_KEY in .env file');
+            console.warn('[AI] API key not configured. AI analysis will be disabled.');
+            console.warn('[AI] Set GEMINI_API_KEY in .env file');
             return;
         }
 
         try {
             this.client = new GoogleGenAI({ apiKey });
             this.isInitialized = true;
-            console.log('[Gemini] Client initialized successfully');
+            console.log('[AI] Client initialized successfully');
         } catch (error) {
-            console.error('[Gemini] Failed to initialize client:', error);
+            console.error('[AI] Failed to initialize client:', error);
         }
     }
 
@@ -99,7 +99,7 @@ export class GeminiAnalyzer {
 
     /**
      * Analyze a URL for security threats using TWO-STEP sequential analysis:
-     * 1. Google Search for domain reputation
+     * 1. Web Search for domain reputation
      * 2. URL Context fetch for page content
      * 3. Final decision combining both signals
      */
@@ -108,29 +108,29 @@ export class GeminiAnalyzer {
         redirectChain?: string[];
     }): Promise<GeminiThreatAnalysis | null> {
         if (!this.isAvailable()) {
-            console.log('[Gemini] AI analysis not available, skipping');
+            console.log('[AI] AI analysis not available, skipping');
             return null;
         }
 
         const startTime = Date.now();
 
         try {
-            // ===== STEP 1: Google Search for domain reputation =====
-            console.log(`[Gemini] Step 1: Google Search for domain reputation...`);
+            // ===== STEP 1: Web Search for domain reputation =====
+            console.log(`[AI] Step 1: Web Search for domain reputation...`);
             const searchResult = await this.doGoogleSearch(url);
-            console.log(`[Gemini] Search complete: ${searchResult ? 'found info' : 'no results'}`);
+            console.log(`[AI] Search complete: ${searchResult ? 'found info' : 'no results'}`);
 
             // ===== STEP 2: URL Context fetch for page content =====
-            console.log(`[Gemini] Step 2: Fetching page content...`);
+            console.log(`[AI] Step 2: Fetching page content...`);
             const contentResult = await this.doUrlFetch(url);
-            console.log(`[Gemini] Fetch complete: ${contentResult ? 'got content' : 'failed'}`);
+            console.log(`[AI] Fetch complete: ${contentResult ? 'got content' : 'failed'}`);
 
             // ===== STEP 3: Final analysis combining both signals =====
-            console.log(`[Gemini] Step 3: Final analysis with both signals...`);
+            console.log(`[AI] Step 3: Final analysis with both signals...`);
             const result = await this.doFinalAnalysis(url, searchResult, contentResult, context);
 
             const latency = Date.now() - startTime;
-            console.log(`[Gemini] Analysis complete in ${latency}ms:`, {
+            console.log(`[AI] Analysis complete in ${latency}ms:`, {
                 url: url.substring(0, 50),
                 threatType: result?.threatType,
                 confidence: result?.confidence
@@ -138,13 +138,13 @@ export class GeminiAnalyzer {
 
             return result;
         } catch (error) {
-            console.error('[Gemini] Analysis error:', error);
+            console.error('[AI] Analysis error:', error);
             return null;
         }
     }
 
     /**
-     * Step 1: Use Google Search to get domain reputation info
+     * Step 1: Use Web Search to get domain reputation info
      */
     private async doGoogleSearch(url: string, useFallback: boolean = false): Promise<string | null> {
         try {
@@ -178,11 +178,11 @@ Summarize what you find in a brief report.`;
         } catch (error: any) {
             // Check for rate limit error (429)
             if (error?.status === 429 && !useFallback) {
-                console.log(`[Gemini] Rate limited on search, falling back to ${GEMINI.FALLBACK_MODEL}...`);
+                console.log(`[AI] Rate limited on search, falling back to ${GEMINI.FALLBACK_MODEL}...`);
                 await new Promise(resolve => setTimeout(resolve, 500));
                 return this.doGoogleSearch(url, true);
             }
-            console.warn('[Gemini] Google Search step failed:', error);
+            console.warn('[AI] Web Search step failed:', error);
             return null;
         }
     }
@@ -225,17 +225,17 @@ Provide a factual summary of the page content.`;
         } catch (error: any) {
             // Check for rate limit error (429)
             if (error?.status === 429 && !useFallback) {
-                console.log(`[Gemini] Rate limited on fetch, falling back to ${GEMINI.FALLBACK_MODEL}...`);
+                console.log(`[AI] Rate limited on fetch, falling back to ${GEMINI.FALLBACK_MODEL}...`);
                 await new Promise(resolve => setTimeout(resolve, 500));
                 return this.doUrlFetch(url, true);
             }
-            console.warn('[Gemini] URL fetch step failed:', error);
+            console.warn('[AI] URL fetch step failed:', error);
             return null;
         }
     }
 
     /**
-     * Step 3: Final analysis combining Google Search + URL Content
+     * Step 3: Final analysis combining Web Search + URL Content
      */
     private async doFinalAnalysis(
         url: string,
@@ -264,14 +264,14 @@ Provide a factual summary of the page content.`;
 
             const text = response.text;
             if (!text) {
-                console.warn('[Gemini] Empty response from final analysis');
+                console.warn('[AI] Empty response from final analysis');
                 return null;
             }
 
             try {
                 return JSON.parse(text) as GeminiThreatAnalysis;
             } catch (e) {
-                console.warn('[Gemini] Failed to parse final analysis JSON:', e);
+                console.warn('[AI] Failed to parse final analysis JSON:', e);
                 // Try to extract JSON from the text
                 const jsonMatch = text.match(/\{[\s\S]*\}/);
                 if (jsonMatch) {
@@ -291,7 +291,7 @@ Provide a factual summary of the page content.`;
         } catch (error: any) {
             // Check for rate limit error (429)
             if (error?.status === 429 && !useFallback) {
-                console.log(`[Gemini] Rate limited on ${GEMINI.MODEL}, falling back to ${GEMINI.FALLBACK_MODEL}...`);
+                console.log(`[AI] Rate limited on ${GEMINI.MODEL}, falling back to ${GEMINI.FALLBACK_MODEL}...`);
                 // Wait a bit before retrying with fallback model
                 await new Promise(resolve => setTimeout(resolve, 500));
                 return this.doFinalAnalysis(url, searchResult, contentResult, context, true);
@@ -317,7 +317,7 @@ Provide a factual summary of the page content.`;
 ## URL to Analyze
 ${url}
 
-## STEP 1 - Google Search Results (Domain Reputation)
+## STEP 1 - Web Search Results (Domain Reputation)
 ${searchResult ? searchResult : '[No search results available - could not verify domain reputation]'}
 
 ## STEP 2 - Page Content Analysis
@@ -334,15 +334,15 @@ ${contentResult ? contentResult : '[Could not fetch page content]'}
 
         prompt += `
 ## Your Task
-Based on BOTH the Google Search results AND the page content analysis, determine if this URL is a threat.
+Based on BOTH the Web Search results AND the page content analysis, determine if this URL is a threat.
 
 Consider:
-1. **Domain Reputation**: What did Google Search reveal about this domain? Is it a known legitimate site?
+1. **Domain Reputation**: What did Web Search reveal about this domain? Is it a known legitimate site?
 2. **Content Analysis**: Does the page content match what you'd expect? Any suspicious forms or urgency tactics?
 3. **Consistency**: Does the domain name match the content? (e.g., a banking page on a non-bank domain is suspicious)
 
 ## Decision Guidelines
-- If Google Search shows this is a LEGITIMATE known website with good reputation, mark as 'safe' (confidence 0.9-1.0)
+- If Web Search shows this is a LEGITIMATE known website with good reputation, mark as 'safe' (confidence 0.9-1.0)
 - If the domain is unknown BUT the content looks like a normal personal/business site without phishing indicators, mark as 'safe' (confidence 0.7-0.9)
 - If there are phishing indicators (fake login, brand impersonation, urgency tactics), mark as 'phishing' with appropriate confidence
 - DO NOT flag a site as phishing just because the TLD is uncommon (.xyz, .io, etc.) - many legitimate sites use these

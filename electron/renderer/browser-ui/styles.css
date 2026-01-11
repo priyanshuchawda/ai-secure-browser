@@ -10,8 +10,8 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, 
-               Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
+    Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
   background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
   color: #e0e0e0;
   min-height: 100vh;
@@ -23,7 +23,6 @@ body {
   height: 100vh;
 }
 
-/* Header / Address Bar */
 .browser-header {
   display: flex;
   align-items: center;
@@ -32,6 +31,46 @@ body {
   background: rgba(255, 255, 255, 0.05);
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(10px);
+  gap: 12px;
+}
+
+/* Navigation Controls */
+.nav-controls {
+  display: flex;
+  gap: 4px;
+}
+
+.nav-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.nav-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+.nav-btn:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.nav-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.nav-btn svg {
+  stroke: currentColor;
 }
 
 .address-bar {
@@ -128,13 +167,27 @@ body {
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.7;
+  }
 }
 
 @keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.3;
+  }
 }
 
 /* Main Content Area */
@@ -144,6 +197,13 @@ body {
   align-items: center;
   justify-content: center;
   padding: 40px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* When webview is active, content should fill the space */
+.browser-content.webview-active {
+  padding: 0;
 }
 
 .welcome-message {
@@ -170,6 +230,25 @@ body {
   font-size: 0.9rem;
   color: rgba(255, 255, 255, 0.5);
   margin-top: 24px;
+}
+
+/* ========================================= */
+/* Webview Container                         */
+/* ========================================= */
+
+#webview-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #fff;
+}
+
+#browser-webview {
+  width: 100%;
+  height: 100%;
+  border: none;
 }
 
 /* ========================================= */
@@ -375,4 +454,384 @@ body {
 .btn-danger {
   background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
   color: #fff;
+}
+
+.btn-warning {
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+  color: #000;
+}
+
+.btn-warning:hover {
+  box-shadow: 0 4px 12px rgba(251, 191, 36, 0.4);
+}
+
+/* ========================================= */
+/* Download Protection Panel                 */
+/* ========================================= */
+
+.download-panel {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(8px);
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.download-card {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  border-radius: 16px;
+  padding: 32px;
+  max-width: 500px;
+  width: 90%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.download-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.download-header h2 {
+  font-size: 1.4rem;
+  color: #fff;
+  margin: 0;
+}
+
+.download-badge {
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.download-badge.badge-safe {
+  background: rgba(74, 222, 128, 0.2);
+  color: #4ade80;
+}
+
+.download-badge.badge-low {
+  background: rgba(74, 144, 217, 0.2);
+  color: #4a90d9;
+}
+
+.download-badge.badge-medium {
+  background: rgba(251, 191, 36, 0.2);
+  color: #fbbf24;
+}
+
+.download-badge.badge-high {
+  background: rgba(249, 115, 22, 0.2);
+  color: #f97316;
+}
+
+.download-badge.badge-critical {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  animation: blink 0.8s infinite;
+}
+
+.download-file-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 12px;
+  margin-bottom: 24px;
+}
+
+.file-icon {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.file-icon.icon-danger {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+.file-icon.icon-warning {
+  background: rgba(251, 191, 36, 0.2);
+  color: #fbbf24;
+}
+
+.file-icon.icon-safe {
+  background: rgba(74, 222, 128, 0.2);
+  color: #4ade80;
+}
+
+.file-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.file-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #fff;
+  word-break: break-all;
+  margin-bottom: 4px;
+}
+
+.file-meta {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.download-risk {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.risk-score-container {
+  text-align: center;
+}
+
+.risk-score-circle {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 3px solid #4ade80;
+  background: linear-gradient(135deg, rgba(74, 222, 128, 0.1) 0%, rgba(74, 144, 217, 0.1) 100%);
+  margin-bottom: 8px;
+}
+
+.risk-score-circle.risk-low {
+  border-color: #4a90d9;
+  background: linear-gradient(135deg, rgba(74, 144, 217, 0.1) 0%, rgba(74, 144, 217, 0.05) 100%);
+}
+
+.risk-score-circle.risk-medium {
+  border-color: #fbbf24;
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.1) 0%, rgba(249, 115, 22, 0.05) 100%);
+}
+
+.risk-score-circle.risk-high {
+  border-color: #f97316;
+  background: linear-gradient(135deg, rgba(249, 115, 22, 0.1) 0%, rgba(239, 68, 68, 0.05) 100%);
+}
+
+.risk-score-circle.risk-critical {
+  border-color: #ef4444;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(185, 28, 28, 0.1) 100%);
+  animation: pulse 1.5s infinite;
+}
+
+.risk-score-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.risk-score-label {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.6);
+  text-transform: uppercase;
+}
+
+.risk-details {
+  flex: 1;
+}
+
+.risk-level {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 8px;
+}
+
+.risk-level.level-safe {
+  color: #4ade80;
+}
+
+.risk-level.level-low {
+  color: #4a90d9;
+}
+
+.risk-level.level-medium {
+  color: #fbbf24;
+}
+
+.risk-level.level-high {
+  color: #f97316;
+}
+
+.risk-level.level-critical {
+  color: #ef4444;
+}
+
+.risk-reasoning {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 1.5;
+}
+
+.download-recommendations {
+  margin-bottom: 24px;
+}
+
+.recommendation-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  margin-bottom: 8px;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.8);
+  border-left: 3px solid #4a90d9;
+}
+
+.recommendation-item::before {
+  content: '•';
+  color: #4a90d9;
+  font-weight: bold;
+}
+
+.download-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.download-actions .btn-primary.btn-danger {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+}
+
+/* ========================================= */
+/* Download Notifications (Toast)            */
+/* ========================================= */
+
+.download-notification {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  z-index: 2000;
+  transform: translateX(120%);
+  opacity: 0;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+  max-width: 400px;
+}
+
+.download-notification.show {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+.notification-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.notification-info .notification-icon {
+  background: rgba(74, 144, 217, 0.2);
+  color: #4a90d9;
+}
+
+.notification-success .notification-icon {
+  background: rgba(74, 222, 128, 0.2);
+  color: #4ade80;
+}
+
+.notification-error .notification-icon {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+.notification-scanning .notification-icon {
+  background: rgba(251, 191, 36, 0.2);
+  color: #fbbf24;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.notification-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.notification-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 4px;
+}
+
+.notification-message {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

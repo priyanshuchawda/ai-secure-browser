@@ -11,6 +11,14 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { getThreatAnalysisEngine } from './threat-analysis/engine';
 import { getDecisionEngine } from './decision-engine/decision-engine';
+import {
+    setupDownloadInterception,
+    proceedWithDownload,
+    cancelDownload,
+    setDownloadCallbacks,
+    type DownloadInfo,
+    type DownloadAnalysis
+} from './download-protection';
 
 // ES module dirname equivalent
 const __filename = fileURLToPath(import.meta.url);
@@ -29,8 +37,124 @@ const IPC_CHANNELS = {
     USER_OVERRIDE: 'threat:override',
     REPORT_FALSE_POSITIVE: 'threat:report-fp',
     GET_STATUS: 'app:status',
-    NAVIGATE: 'browser:navigate'
+    NAVIGATE: 'browser:navigate',
+    NAV_BACK: 'browser:back',
+    NAV_FORWARD: 'browser:forward',
+    NAV_REFRESH: 'browser:refresh',
+    NAV_HOME: 'browser:home',
+    GET_NAV_STATE: 'browser:get-nav-state',
+    // Download protection channels
+    DOWNLOAD_ANALYZED: 'download:analyzed',
+    DOWNLOAD_PROCEED: 'download:proceed',
+    DOWNLOAD_CANCEL: 'download:cancel'
 };
+
+// ============================================
+// Navigation History Manager (Doubly Linked List)
+// ============================================
+interface HistoryNode {
+    url: string;
+    prev: HistoryNode | null;
+    next: HistoryNode | null;
+}
+
+class NavigationHistory {
+    private current: HistoryNode | null = null;
+    private homeUrl: string;
+
+    constructor(homeUrl: string = '') {
+        this.homeUrl = homeUrl;
+    }
+
+    /**
+     * Navigate to a new URL (adds to history)
+     */
+    navigate(url: string): void {
+        const newNode: HistoryNode = {
+            url,
+            prev: this.current,
+            next: null
+        };
+
+        if (this.current) {
+            // Clear forward history when navigating to new page
+            this.current.next = newNode;
+        }
+
+        this.current = newNode;
+    }
+
+    /**
+     * Go back in history
+     */
+    goBack(): string | null {
+        if (this.current?.prev) {
+            this.current = this.current.prev;
+            return this.current.url;
+        }
+        return null;
+    }
+
+    /**
+     * Go forward in history
+     */
+    goForward(): string | null {
+        if (this.current?.next) {
+            this.current = this.current.next;
+            return this.current.url;
+        }
+        return null;
+    }
+
+    /**
+     * Check if can go back
+     */
+    canGoBack(): boolean {
+        return this.current?.prev !== null && this.current?.prev !== undefined;
+    }
+
+    /**
+     * Check if can go forward
+     */
+    canGoForward(): boolean {
+        return this.current?.next !== null && this.current?.next !== undefined;
+    }
+
+    /**
+     * Get current URL
+     */
+    getCurrentUrl(): string | null {
+        return this.current?.url || null;
+    }
+
+    /**
+     * Get home URL
+     */
+    getHomeUrl(): string {
+        return this.homeUrl;
+    }
+
+    /**
+     * Clear history and go home
+     */
+    goHome(): void {
+        this.current = null;
+    }
+
+    /**
+     * Get navigation state
+     */
+    getState(): { canGoBack: boolean; canGoForward: boolean; currentUrl: string | null } {
+        return {
+            canGoBack: this.canGoBack(),
+            canGoForward: this.canGoForward(),
+            currentUrl: this.getCurrentUrl()
+        };
+    }
+}
+
+// Navigation history instance
+const navHistory = new NavigationHistory();
 
 // Initialize engines
 const threatEngine = getThreatAnalysisEngine();
@@ -44,11 +168,12 @@ function createWindow(): void {
         width: 1200,
         height: 800,
         webPreferences: {
-            preload: path.join(__dirname, '../preload/index.js'),
+            preload: path.join(__dirname, '../preload/index.cjs'),
             // Security settings per Constitution Principle I
             nodeIntegration: false,
             contextIsolation: true,
-            sandbox: true
+            sandbox: false, // Needed for webview
+            webviewTag: true // Enable webview tag for embedding websites
         },
         title: 'AI Secure Browser'
     });
@@ -89,6 +214,78 @@ function setupRequestInterception(): void {
     });
 
     console.log('[Main] Request interception enabled');
+}
+
+/**
+ * Setup download protection
+ */
+function setupDownloadProtection(): void {
+    const downloadCallback = (downloadId: string, info: DownloadInfo, analysis: DownloadAnalysis) => {
+        console.log('[Main] Download analyzed:', downloadId, analysis.riskLevel);
+
+        // Send to renderer for user decision
+        if (mainWindow) {
+            mainWindow.webContents.send(IPC_CHANNELS.DOWNLOAD_ANALYZED, {
+                downloadId,
+                info,
+                analysis
+            });
+        }
+    };
+
+    // Setup progress, completion, and scanning callbacks
+    setDownloadCallbacks(
+        // Progress callback
+        (downloadId: string, progress: number, received: number, total: number) => {
+            if (mainWindow) {
+                mainWindow.webContents.send('download:progress', {
+                    downloadId,
+                    progress,
+                    received,
+                    total
+                });
+            }
+        },
+        // Completion callback
+        (downloadId: string, info: DownloadInfo, savePath: string, success: boolean) => {
+            console.log('[Main] Download complete:', downloadId, success ? 'SUCCESS' : 'FAILED');
+            if (mainWindow) {
+                mainWindow.webContents.send('download:complete', {
+                    downloadId,
+                    info,
+                    savePath,
+                    success
+                });
+            }
+        },
+        // Scanning callback
+        (downloadId: string, info: DownloadInfo) => {
+            console.log('[Main] Download scanning started:', downloadId, info.fileName);
+            if (mainWindow) {
+                mainWindow.webContents.send('download:scanning', {
+                    downloadId,
+                    info
+                });
+            }
+        }
+    );
+
+    // Intercept downloads from the main window's default session
+    setupDownloadInterception(
+        session.defaultSession,
+        mainWindow,
+        downloadCallback
+    );
+
+    // Also intercept downloads from the webview's partition session
+    const webviewSession = session.fromPartition('persist:main');
+    setupDownloadInterception(
+        webviewSession,
+        mainWindow,
+        downloadCallback
+    );
+
+    console.log('[Main] Download protection enabled for default and webview sessions');
 }
 
 /**
@@ -170,8 +367,74 @@ function setupIpcHandlers(): void {
     ipcMain.on(IPC_CHANNELS.NAVIGATE, (_event, { url }) => {
         console.log('[IPC] Navigate to:', url);
         if (mainWindow) {
+            navHistory.navigate(url);
+            mainWindow.loadURL(url);
+            // Send updated nav state
+            mainWindow.webContents.send('browser:nav-state-changed', navHistory.getState());
+        }
+    });
+
+    // Handle back navigation
+    ipcMain.on(IPC_CHANNELS.NAV_BACK, () => {
+        const url = navHistory.goBack();
+        console.log('[IPC] Navigate back to:', url);
+        if (url && mainWindow) {
+            mainWindow.loadURL(url);
+            mainWindow.webContents.send('browser:nav-state-changed', navHistory.getState());
+        }
+    });
+
+    // Handle forward navigation
+    ipcMain.on(IPC_CHANNELS.NAV_FORWARD, () => {
+        const url = navHistory.goForward();
+        console.log('[IPC] Navigate forward to:', url);
+        if (url && mainWindow) {
+            mainWindow.loadURL(url);
+            mainWindow.webContents.send('browser:nav-state-changed', navHistory.getState());
+        }
+    });
+
+    // Handle refresh
+    ipcMain.on(IPC_CHANNELS.NAV_REFRESH, () => {
+        const url = navHistory.getCurrentUrl();
+        console.log('[IPC] Refresh:', url);
+        if (url && mainWindow) {
             mainWindow.loadURL(url);
         }
+    });
+
+    // Handle home navigation
+    ipcMain.on(IPC_CHANNELS.NAV_HOME, () => {
+        console.log('[IPC] Navigate home');
+        if (mainWindow) {
+            navHistory.goHome();
+            // Reload the app's home page
+            if (VITE_DEV_SERVER_URL) {
+                mainWindow.loadURL(VITE_DEV_SERVER_URL);
+            } else {
+                mainWindow.loadFile(path.join(__dirname, '../../dist/index.html'));
+            }
+            mainWindow.webContents.send('browser:nav-state-changed', navHistory.getState());
+        }
+    });
+
+    // Handle get navigation state
+    ipcMain.handle(IPC_CHANNELS.GET_NAV_STATE, () => {
+        return navHistory.getState();
+    });
+
+    // Handle download proceed decision
+    ipcMain.handle(IPC_CHANNELS.DOWNLOAD_PROCEED, async (_event, { downloadId }) => {
+        console.log('[IPC] Download proceed:', downloadId);
+        const success = proceedWithDownload(downloadId);
+        return { success };
+    });
+
+    // Handle download cancel decision
+    ipcMain.handle(IPC_CHANNELS.DOWNLOAD_CANCEL, async (_event, { downloadId }) => {
+        console.log('[IPC] Download cancel:', downloadId);
+        const success = cancelDownload(downloadId);
+        return { success };
     });
 
     console.log('[Main] IPC handlers registered');
@@ -186,6 +449,9 @@ app.whenReady().then(() => {
     // Setup IPC handlers before creating window
     setupIpcHandlers();
     createWindow();
+
+    // Setup download protection after window is created
+    setupDownloadProtection();
 
     // On macOS, re-create window when dock icon is clicked
     app.on('activate', () => {
