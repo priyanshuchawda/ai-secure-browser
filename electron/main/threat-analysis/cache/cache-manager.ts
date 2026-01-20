@@ -234,8 +234,9 @@ export class CacheManager {
                 expiresAt: expiresAt.toISOString()
             };
 
-            // Periodically save to disk (every 10 writes)
-            if (this.stats.writes % 10 === 0) {
+            // Save to disk: immediately for first 5 writes, then every 5 writes
+            // This ensures cache persists even with few visits
+            if (this.stats.writes <= 5 || this.stats.writes % 5 === 0) {
                 this.saveDiskCache();
             }
         }

@@ -396,37 +396,67 @@ ${contextSection}
 <decision_tree>
 Follow this decision tree IN ORDER. Stop at the first matching condition:
 
-**PRIORITY 1 - INACCESSIBLE DOMAINS (BLOCK)**
-If page_content_analysis contains ANY of these tags:
-- "[DOMAIN_NOT_ACCESSIBLE]", "[ERROR_PAGE_404]", "[CONNECTION_FAILED]", "[ERROR_REDIRECT]", "[MINIMAL_CONTENT]"
-→ threatType: "phishing", confidence: 0.75, recommendation: "warn"
-→ Reasoning: Non-existent or broken domains are commonly used in phishing campaigns
+**CRITICAL REASONING PRINCIPLE - "ON vs IS" DISTINCTION**
+Before evaluating ANY domain, apply this logic:
+- "Scams reported ON [platform]" → The PLATFORM is SAFE (users misuse it)
+- "Scams reported ABOUT [domain]" → The DOMAIN is MALICIOUS
+- Example: "Discord has scam links" means users share scams ON Discord → discord.com is SAFE
+- Example: "discord-nitro-free.xyz is a scam" → that specific domain is PHISHING
+- Signs a platform is LEGITIMATE despite scam reports:
+  * Has millions of users
+  * Exists for years
+  * Has official company behind it
+  * Is the OFFICIAL domain for a known service
+  * Search results discuss "how to avoid scams on [platform]" rather than "[platform] is a scam"
 
-**PRIORITY 2 - KNOWN MALICIOUS (BLOCK)**  
-If web_search_results contains "[SCAM_REPORTS_FOUND]" OR mentions phishing/scam reports:
+**PRIORITY 1 - OFFICIAL DOMAIN OF MAJOR SERVICE (ALLOW)**
+If the domain is the OFFICIAL, PRIMARY domain for a well-known service/company:
+- Check: Is this THE official domain? (not a lookalike)
+- Check: Does the company/service actually exist and is widely known?
+- Check: Do search results confirm this is the official site?
+→ threatType: "safe", confidence: 0.95-0.99, recommendation: "allow"
+→ Note: Even if scams happen ON the platform, the official domain is safe
+
+**PRIORITY 2 - INACCESSIBLE/NON-EXISTENT DOMAINS (WARN)**
+If page_content_analysis contains:
+- "[DOMAIN_NOT_ACCESSIBLE]", "[ERROR_PAGE_404]", "[CONNECTION_FAILED]", "[MINIMAL_CONTENT]"
+→ threatType: "phishing", confidence: 0.75, recommendation: "warn"
+→ Reasoning: Dead/broken domains are common phishing patterns
+
+**PRIORITY 3 - BRAND IMPERSONATION (BLOCK)**
+If domain CONTAINS a brand name but IS NOT the official domain:
+- Pattern: {brand}-{word}.{tld} (e.g., "paypal-verify.xyz", "google-login.net")
+- Pattern: {brand}{typo}.{tld} (e.g., "g00gle.com", "paypa1.com")
+- Evidence: Official domain for this brand is different
 → threatType: "phishing", confidence: 0.85-0.95, recommendation: "block"
 
-**PRIORITY 3 - UNSAFE CONTENT (BLOCK)**
+**PRIORITY 4 - DOMAIN ITSELF REPORTED AS SCAM (BLOCK)**
+If search results explicitly report THIS SPECIFIC DOMAIN as malicious:
+- NOT reports about scams on a platform
+- BUT reports that THIS EXACT DOMAIN is a phishing/scam site
+→ threatType: "phishing", confidence: 0.85-0.95, recommendation: "block"
+
+**PRIORITY 5 - UNSAFE CONTENT DETECTED (BLOCK)**
 If page_content_analysis contains "[UNSAFE_CONTENT_BLOCKED]":
 → threatType: "malware", confidence: 0.9, recommendation: "block"
 
-**PRIORITY 4 - PHISHING INDICATORS (WARN/BLOCK)**
-If page analysis reveals ANY of these red flags:
-- Login forms on non-official domains (e.g., paypal-secure.xyz asking for PayPal credentials)
-- Brand impersonation (mentions Google, Microsoft, banks but domain doesn't match)
-- Urgency tactics ("Account suspended!", "Verify immediately!", "24 hours to act!")
-- Requests for sensitive data (SSN, credit card) outside of legitimate contexts
+**PRIORITY 6 - PHISHING CONTENT INDICATORS (WARN/BLOCK)**
+If page analysis reveals:
+- Login forms requesting credentials for a DIFFERENT service
+- Urgency tactics ("Account suspended!", "Verify now!")
+- Requests for sensitive data (SSN, credit card, passwords)
+- Content impersonates a known brand but domain doesn't match
 → threatType: "phishing", confidence: 0.7-0.9, recommendation: "warn" or "block"
 
-**PRIORITY 5 - VERIFIED LEGITIMATE (ALLOW)**
-If web_search_results contains "[VERIFIED_LEGITIMATE]" AND content matches expected purpose:
+**PRIORITY 7 - VERIFIED LEGITIMATE (ALLOW)**
+If search confirms legitimacy AND content matches expected purpose:
 → threatType: "safe", confidence: 0.9-1.0, recommendation: "allow"
 
-**PRIORITY 6 - UNKNOWN BUT BENIGN (ALLOW WITH CAUTION)**
+**PRIORITY 8 - UNKNOWN BUT BENIGN (ALLOW)**
 If domain is unknown BUT:
 - Site is accessible with real content
-- No phishing indicators found
-- Content appears legitimate (blog, business, portfolio, etc.)
+- No phishing indicators
+- Content appears legitimate (blog, business, app, etc.)
 → threatType: "safe", confidence: 0.7-0.85, recommendation: "allow"
 </decision_tree>
 
@@ -454,15 +484,34 @@ URL: https://john-developer.io
 Search: [NO_REPUTATION_DATA] Personal portfolio site
 Content: Developer portfolio with projects, no login forms, no sensitive data requests
 Decision: {"threatType": "safe", "confidence": 0.8, "indicators": [{"type": "benign_content", "description": "Personal portfolio with no malicious indicators", "severity": "info"}], "recommendation": "allow"}
+
+Example 5 - Major Platform with Scam Reports ON It (ALLOW - Critical Distinction):
+URL: https://discord.com
+Search: Reports about scams happening ON Discord (phishing links sent via Discord messages, fake giveaways)
+Content: Official Discord homepage with legitimate login, official branding
+Decision: {"threatType": "safe", "confidence": 0.99, "indicators": [{"type": "major_platform", "description": "Official Discord domain - scams happen ON the platform but Discord itself is legitimate", "severity": "info"}], "recommendation": "allow"}
+→ CRITICAL: Scams reported ON Discord ≠ Discord IS a scam. The platform itself is safe.
+
+Example 6 - Fake Discord Impersonation (BLOCK):
+URL: https://discord-nitro-free.xyz
+Search: Multiple phishing reports for this specific domain
+Content: Fake Discord interface asking for login credentials
+Decision: {"threatType": "phishing", "confidence": 0.95, "indicators": [{"type": "brand_impersonation", "description": "Fake Discord domain impersonating official service", "severity": "critical"}], "recommendation": "block"}
 </examples>
 
 <constraints>
 - You MUST follow the decision tree priority order
-- Include at least one indicator with evidence from the search or content analysis
+- CRITICAL "ON vs IS" DISTINCTION:
+  * "Scams happen ON [platform]" → Platform is SAFE (it's being misused by bad actors)
+  * "[domain] IS a scam" → Domain is MALICIOUS
+  * Ask yourself: "Is this THE official domain, or a fake trying to impersonate it?"
+- To identify OFFICIAL domains: Check if search results show it as an established company/service
+- To identify FAKE domains: Look for brand names combined with extra words/typos
+- Include at least one indicator with evidence from search or content analysis
 - Confidence MUST be between 0.0 and 1.0
-- DO NOT mark sites as phishing just because they use uncommon TLDs (.xyz, .io, .dev, etc.)
-- DO NOT mark sites as phishing just because they are unknown - require actual malicious indicators
-- Non-existent domains ARE always suspicious - they cannot be legitimate
+- DO NOT mark sites as phishing just because they use uncommon TLDs (.xyz, .io, .dev)
+- DO NOT mark official platforms as phishing because scammers use them
+- Non-existent/inaccessible domains ARE suspicious - legitimate sites are reachable
 </constraints>
 
 <output_format>

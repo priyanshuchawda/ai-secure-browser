@@ -5,6 +5,7 @@
 
 import { Session, DownloadItem, WebContents, BrowserWindow, app } from 'electron';
 import path from 'path';
+import fs from 'fs';
 import { analyzeDownload, type DownloadInfo, type DownloadAnalysis } from './ai-download-analyzer';
 
 // Store for pending downloads awaiting user decision
@@ -56,18 +57,13 @@ function generateDownloadId(): string {
 }
 
 /**
- * Get default download path (project root/downloads folder)
+ * Get default download path (system Downloads folder)
  */
 function getDefaultDownloadPath(fileName: string): string {
-    // Use project root directory for downloads
-    const projectRoot = app.getAppPath();
-    const downloadsDir = path.join(projectRoot, 'downloads');
+    // Use system Downloads folder for easier access
+    const downloadsDir = app.getPath('downloads');
 
-    // Ensure downloads directory exists
-    const fs = require('fs');
-    if (!fs.existsSync(downloadsDir)) {
-        fs.mkdirSync(downloadsDir, { recursive: true });
-    }
+    console.log('[DownloadInterceptor] Save path:', path.join(downloadsDir, fileName));
 
     return path.join(downloadsDir, fileName);
 }
@@ -153,9 +149,18 @@ export function setupDownloadInterception(
                 timestamp: Date.now()
             });
 
-            // If safe, auto-proceed with progress tracking
-            if (analysis.riskLevel === 'safe' && analysis.riskScore < 20) {
-                console.log('[DownloadInterceptor] Auto-proceeding safe download');
+            // Determine if this file type requires user confirmation
+            const extension = path.extname(fileName).toLowerCase();
+            const dangerousExtensions = ['.exe', '.msi', '.bat', '.cmd', '.ps1', '.vbs', '.js', '.jar', '.dmg', '.pkg', '.app', '.deb', '.rpm', '.appimage'];
+            const archiveExtensions = ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2'];
+            const requiresConfirmation = dangerousExtensions.includes(extension) || archiveExtensions.includes(extension);
+
+            // Only auto-proceed if:
+            // 1. File is safe (low risk score)
+            // 2. File is NOT an executable or archive
+            // 3. From trusted source
+            if (analysis.riskLevel === 'safe' && analysis.riskScore < 20 && !requiresConfirmation) {
+                console.log('[DownloadInterceptor] Auto-proceeding safe download (non-executable)');
                 startDownloadWithProgress(downloadId, item, downloadInfo, savePath);
                 pendingDownloads.delete(downloadId);
 
@@ -167,7 +172,8 @@ export function setupDownloadInterception(
                 return;
             }
 
-            // For risky downloads, notify the UI
+            // For all executables/archives and risky downloads: ALWAYS show warning UI
+            console.log(`[DownloadInterceptor] Showing warning UI for: ${fileName} (${analysis.riskLevel})`);
             onDownloadAnalyzed(downloadId, downloadInfo, analysis);
 
             // If should block and no override allowed, cancel immediately

@@ -11,6 +11,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { getThreatAnalysisEngine } from './threat-analysis/engine';
 import { getDecisionEngine } from './decision-engine/decision-engine';
+import { getCacheManager } from './threat-analysis/cache/cache-manager';
 import {
     setupDownloadInterception,
     proceedWithDownload,
@@ -309,7 +310,8 @@ function setupIpcHandlers(): void {
             console.log('[IPC] Result:', {
                 threatType: assessment.threatType,
                 confidence: assessment.confidence,
-                action: decision.action
+                action: decision.action,
+                fromCache: assessment.analysisMethod === 'cache'
             });
 
             return {
@@ -321,7 +323,11 @@ function setupIpcHandlers(): void {
                         type: i.type,
                         description: i.description,
                         severity: i.severity
-                    }))
+                    })),
+                    // Add cache info for UI
+                    fromCache: assessment.analysisMethod === 'cache',
+                    analysisMethod: assessment.analysisMethod,
+                    latency: assessment.analysisLatency
                 },
                 decision: {
                     action: decision.action,
@@ -351,6 +357,64 @@ function setupIpcHandlers(): void {
         console.log('[IPC] False positive report:', data);
         // TODO: Store false positive report
         return { success: true };
+    });
+
+    // Handle force refresh (bypass cache and re-analyze)
+    ipcMain.handle('security:forceRefresh', async (_event, { url }) => {
+        console.log('[IPC] Force refresh request:', url);
+
+        try {
+            // Clear cache for this URL first
+            const cacheManager = getCacheManager();
+            const domain = new URL(url).hostname;
+
+            // Force a fresh analysis by passing skipCache flag
+            const assessment = await threatEngine.analyze({
+                url,
+                requestId: `refresh-${Date.now()}`,
+                skipCache: true  // This tells the engine to skip cache lookup
+            });
+
+            // Store the fresh result in cache
+            cacheManager.store(url, assessment);
+
+            // Make security decision
+            const decision = decisionEngine.decide(assessment);
+
+            console.log('[IPC] Refresh result:', {
+                threatType: assessment.threatType,
+                confidence: assessment.confidence,
+                action: decision.action
+            });
+
+            return {
+                success: true,
+                assessment: {
+                    threatType: assessment.threatType,
+                    confidence: assessment.confidence,
+                    indicators: assessment.indicators.map(i => ({
+                        type: i.type,
+                        description: i.description,
+                        severity: i.severity
+                    })),
+                    fromCache: false,
+                    analysisMethod: assessment.analysisMethod,
+                    latency: assessment.analysisLatency
+                },
+                decision: {
+                    action: decision.action,
+                    rationale: decision.rationale,
+                    riskLevel: decision.riskLevel,
+                    overridable: decision.overridable
+                }
+            };
+        } catch (error) {
+            console.error('[IPC] Force refresh error:', error);
+            return {
+                success: false,
+                error: String(error)
+            };
+        }
     });
 
     // Handle app status request
@@ -466,6 +530,12 @@ app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
         app.quit();
     }
+});
+
+// Flush cache before quitting
+app.on('before-quit', () => {
+    console.log('[Main] Flushing cache before quit...');
+    getCacheManager().flush();
 });
 
 // Security: Prevent new window creation

@@ -70,6 +70,13 @@ const electronAPI = {
     },
 
     /**
+     * Force refresh analysis (bypass cache and re-analyze with AI)
+     */
+    forceRefresh: (url: string): Promise<unknown> => {
+        return ipcRenderer.invoke('security:forceRefresh', { url });
+    },
+
+    /**
      * Listen for analysis results
      */
     onAnalysisResult: (callback: (result: unknown) => void): void => {

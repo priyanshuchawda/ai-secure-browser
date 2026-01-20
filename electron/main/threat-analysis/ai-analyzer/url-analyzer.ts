@@ -130,10 +130,9 @@ export class UrlContentAnalyzer {
         }
 
         const startTime = Date.now();
+        const prompt = this.buildContentAnalysisPrompt(url, context);
 
         try {
-            const prompt = this.buildContentAnalysisPrompt(url, context);
-
             console.log(`[UrlAnalyzer] Fetching and analyzing content for: ${url.substring(0, 60)}...`);
 
             const response = await this.client!.models.generateContent({
@@ -202,7 +201,35 @@ export class UrlContentAnalyzer {
             });
 
             return result;
-        } catch (error) {
+        } catch (error: any) {
+            // Check for rate limit error (429) - fallback to lite model
+            if (error?.status === 429) {
+                console.log('[UrlAnalyzer] Rate limited on primary model, falling back to gemini-2.5-flash-lite...');
+                try {
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    const fallbackResponse = await this.client!.models.generateContent({
+                        model: GEMINI.FALLBACK_MODEL,
+                        contents: prompt,
+                        config: {
+                            tools: [{ urlContext: {} }],
+                            responseMimeType: undefined,
+                            responseJsonSchema: undefined,
+                            temperature: GEMINI.TEMPERATURE
+                        }
+                    });
+
+                    const fallbackText = fallbackResponse.text;
+                    if (fallbackText) {
+                        const jsonMatch = fallbackText.match(/```json\s*([\s\S]*?)\s*```/) || fallbackText.match(/```\s*([\s\S]*?)\s*```/);
+                        const jsonString = jsonMatch ? jsonMatch[1] : fallbackText;
+                        const fallbackResult = JSON.parse(jsonString) as UrlContentAnalysis;
+                        console.log('[UrlAnalyzer] Fallback analysis complete');
+                        return fallbackResult;
+                    }
+                } catch (fallbackError) {
+                    console.error('[UrlAnalyzer] Fallback also failed:', fallbackError);
+                }
+            }
             console.error('[UrlAnalyzer] Content analysis error:', error);
             return null;
         }
@@ -215,54 +242,102 @@ export class UrlContentAnalyzer {
         referrer?: string | null;
         redirectChain?: string[];
     }): string {
-        let prompt = `Fetch and analyze the content of this URL for security threats: ${url}
-
-You are a cybersecurity expert. Use the URL Context tool to fetch the page content and analyze it for threats.
-
-## Content Analysis Tasks:
-1. **Check for Credential Harvesting Forms**
-   - Look for login forms, password fields, credit card inputs
-   - Verify if form targets match the apparent domain
-
-2. **Detect Brand Impersonation**
-   - Compare page branding (logos, colors, text) to legitimate sites
-   - Check if domain matches brand mentioned on page
-   - Look for mismatched SSL certificates
-
-3. **Identify Social Engineering Tactics**
-   - Fake urgency: "Your account will be suspended!", "Act now!"
-   - Fear tactics: "Your computer is infected", "You've been hacked"
-   - Too-good-to-be-true: "You've won!", "Free iPhone"
-
-4. **Check Page Structure**
-   - Analyze form action URLs
-   - Look for obfuscated JavaScript
-   - Check for suspicious redirects
-
-5. **Verify Brand Consistency**
-   - Does the domain match brands mentioned on the page?
-   - Are there logo/branding inconsistencies?`;
-
+        let contextSection = '';
         if (context?.referrer) {
-            prompt += `\n\nReferrer: ${context.referrer}`;
+            contextSection += `\n<referrer>${context.referrer}</referrer>`;
         }
-
         if (context?.redirectChain && context.redirectChain.length > 0) {
-            prompt += `\n\nRedirect chain: ${context.redirectChain.join(' -> ')}`;
+            contextSection += `\n<redirect_chain>${context.redirectChain.join(' → ')}</redirect_chain>`;
         }
 
-        prompt += `
+        return `<role>
+You are a cybersecurity expert specializing in web content analysis and phishing detection.
+Your analysis protects users from credential theft, malware, and social engineering attacks.
+</role>
 
-Provide structured analysis with:
-- threatType: 'phishing', 'malware', 'social_engineering', or 'safe'
-- confidence: 0.0 to 1.0
-- indicators: specific content-based evidence found
-- recommendation: 'block', 'warn', or 'allow'
-- contentAnalysis: page details (title, forms, text patterns, brands)
+<task>
+Fetch and analyze the content of this URL for security threats using the URL Context tool.
+URL: ${url}
+</task>
+${contextSection}
 
-Be thorough but conservative: only flag genuine threats with evidence.`;
+<analysis_checklist>
+**1. Credential Harvesting Detection**
+- Scan for login forms, password fields, credit card inputs
+- Check if form action URLs point to the same domain or suspicious external domains
+- Look for hidden form fields that may capture extra data
 
-        return prompt;
+**2. Brand Impersonation Detection**
+- Identify what brands/companies are referenced (logos, text, names)
+- Compare the actual domain to brands mentioned
+- Example: If page shows PayPal branding but domain is "paypa1-security.com" → PHISHING
+
+**3. Social Engineering Tactics**
+- Urgency: "Act now!", "Limited time!", "Your account will be suspended!"
+- Fear: "Your computer is infected!", "You've been hacked!"
+- Greed: "You've won!", "Free prize!", "Claim your reward!"
+
+**4. Technical Red Flags**
+- Obfuscated or suspicious JavaScript
+- Form actions pointing to different domains
+- Excessive redirects
+- Missing or invalid SSL references
+
+**5. Content Legitimacy**
+- Does the content match what you'd expect from this domain?
+- Is the page professionally designed or hastily made?
+- Are there spelling/grammar errors typical of phishing?
+</analysis_checklist>
+
+<decision_tree>
+**PHISHING (confidence 0.8-1.0)**:
+- Login form on non-matching domain (paypal form on not-paypal.com)
+- Brand impersonation detected
+- Urgency + credential request
+
+**SOCIAL_ENGINEERING (confidence 0.7-0.9)**:
+- Fear/greed tactics without actual credential forms
+- Fake virus warnings
+- Prize/lottery scams
+
+**MALWARE (confidence 0.8-1.0)**:
+- Content flagged as unsafe
+- Forced downloads
+- Malicious scripts detected
+
+**SAFE (confidence 0.8-1.0)**:
+- Content matches domain purpose
+- No credential harvesting
+- No brand impersonation
+- Professional, legitimate content
+</decision_tree>
+
+<output_format>
+Return ONLY valid JSON matching this structure:
+{
+  "threatType": "phishing" | "malware" | "social_engineering" | "safe",
+  "confidence": 0.0-1.0,
+  "indicators": [
+    {"type": "string", "description": "string", "severity": "critical|high|medium|low|info"}
+  ],
+  "recommendation": "block" | "warn" | "allow",
+  "contentAnalysis": {
+    "pageTitle": "actual page title",
+    "hasLoginForm": true/false,
+    "hasSensitiveInputs": true/false,
+    "textIndicators": ["any suspicious text patterns found"],
+    "brandMentions": ["brands/companies mentioned on page"]
+  }
+}
+</output_format>
+
+<constraints>
+- Use URL Context tool to fetch actual page content
+- Only report what you actually find in the content
+- Brand mismatch (content vs domain) is ALWAYS suspicious
+- Login forms on mismatched domains are CRITICAL
+- Be conservative: only flag genuine threats with evidence
+</constraints>`;
     }
 }
 

@@ -44,13 +44,16 @@ export class ThreatAnalysisEngine {
         }
 
         // ===== Stage 1: Cache Lookup (fastest) =====
-        if (!request.options?.forceAiAnalysis) {
+        // Skip cache if forceAiAnalysis is set OR skipCache is true (force refresh)
+        if (!request.options?.forceAiAnalysis && !request.skipCache) {
             const cached = this.cacheManager.lookup(request.url);
             if (cached) {
                 cached.requestId = requestId;
                 console.log(`[Engine] Cache hit, latency: ${Date.now() - startTime}ms`);
                 return cached;
             }
+        } else if (request.skipCache) {
+            console.log('[Engine] Skipping cache (force refresh requested)');
         }
 
         // ===== Stage 2: Local Rule Detection =====
@@ -73,6 +76,8 @@ export class ThreatAnalysisEngine {
             !request.options?.offlineMode &&
             this.geminiAnalyzer.isAvailable()
         );
+
+        let aiCalledButFailed = false;  // Track if AI was called but returned no result
 
         if (shouldCallAI) {
             const aiResult = await this.analyzeWithAI(request);
@@ -112,6 +117,10 @@ export class ThreatAnalysisEngine {
                 this.cacheManager.store(request.url, assessment);
                 console.log(`[Engine] AI analysis complete, latency: ${assessment.analysisLatency}ms`);
                 return assessment;
+            } else {
+                // AI was called but failed (rate limit, network error, etc.)
+                aiCalledButFailed = true;
+                console.log('[Engine] AI analysis failed, falling back to local rules');
             }
         }
 
@@ -127,8 +136,23 @@ export class ThreatAnalysisEngine {
             return assessment;
         }
 
-        // No threats detected
-        const assessment = this.createSafeAssessment(requestId, request.url, startTime);
+        // No threats detected by local rules, but AI may have been unavailable
+        // Be honest about limited analysis - don't claim 100% safe without AI
+        const aiUnavailable = !shouldCallAI || aiCalledButFailed;
+        const assessment = this.createSafeAssessment(
+            requestId,
+            request.url,
+            startTime,
+            aiUnavailable ? 'AI analysis unavailable - local rules only' : undefined
+        );
+
+        // Lower confidence when AI couldn't verify
+        if (aiUnavailable) {
+            assessment.confidence = 0.6; // Lower confidence without AI verification
+            assessment.analysisMethod = AnalysisMethod.OFFLINE_FALLBACK;
+            console.log('[Engine] Warning: AI unavailable, using local rules only (reduced confidence)');
+        }
+
         this.cacheManager.store(request.url, assessment);
         return assessment;
     }

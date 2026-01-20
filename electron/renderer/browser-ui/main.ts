@@ -11,6 +11,7 @@ declare global {
     interface Window {
         electronAPI: {
             analyzeUrl: (url: string) => Promise<unknown>;
+            forceRefresh: (url: string) => Promise<unknown>;  // Force re-analyze bypassing cache
             submitOverride: (requestId: string, reason: string) => Promise<void>;
             reportFalsePositive: (data: { url: string; threatType: string; justification: string }) => Promise<void>;
             navigate: (url: string) => void;
@@ -284,6 +285,11 @@ function displayScanResults(assessment: any, decision: any, url: string): void {
     const isWarning = decision.action === 'warn';
     const isBlock = decision.action === 'block';
 
+    // Check if result is from cache or local rules (not fresh AI analysis)
+    const isFromCache = assessment.fromCache === true;
+    const isLocalRulesOnly = assessment.analysisMethod === 'local_rule' || assessment.analysisMethod === 'offline';
+    const canRecheck = isFromCache || isLocalRulesOnly;
+
     // Calculate score (simple inverse of confidence for display)
     const score = Math.round((1 - assessment.confidence) * 100);
     scoreValue.textContent = isSafe ? '100' : score.toString();
@@ -318,9 +324,17 @@ function displayScanResults(assessment: any, decision: any, url: string): void {
         proceedBtn.style.display = 'none'; // Can't proceed
     }
 
-    // Update Details
+    // Update Details - show analysis method with cache indicator
     threatTypeEl.textContent = assessment.threatType || 'Safe';
-    analysisMethodEl.textContent = assessment.analysisMethod === 'ai_analysis' ? 'AI (Deep Scan)' : 'Local Rules';
+    let methodText = 'AI (Deep Scan)';
+    if (isFromCache) {
+        methodText = '⚡ From Cache';
+    } else if (isLocalRulesOnly) {
+        methodText = 'Local Rules';
+    } else if (assessment.analysisMethod === 'ai' || assessment.analysisMethod === 'ai_analysis') {
+        methodText = '🤖 AI Analysis';
+    }
+    analysisMethodEl.textContent = methodText;
 
     // List Indicators
     indicatorsList.innerHTML = '';
@@ -333,6 +347,48 @@ function displayScanResults(assessment: any, decision: any, url: string): void {
         });
     } else if (isSafe) {
         indicatorsList.innerHTML = '<div class="indicator-item severity-info">No threats detected. Content is safe.</div>';
+    }
+
+    // Add "Re-check with AI" button if result is from cache or local rules
+    if (canRecheck) {
+        // Remove existing recheck button if any
+        const existingRecheck = document.getElementById('recheck-btn');
+        if (existingRecheck) existingRecheck.remove();
+
+        const recheckBtn = document.createElement('button');
+        recheckBtn.id = 'recheck-btn';
+        recheckBtn.className = 'btn-secondary';
+        recheckBtn.textContent = '🔄 Re-check with AI';
+        recheckBtn.style.marginLeft = '10px';
+        recheckBtn.onclick = async () => {
+            recheckBtn.disabled = true;
+            recheckBtn.textContent = '⏳ Analyzing...';
+
+            try {
+                const result = await window.electronAPI.forceRefresh(url) as any;
+                if (result.success && result.assessment && result.decision) {
+                    displayScanResults(result.assessment, result.decision, url);
+                } else {
+                    recheckBtn.textContent = '❌ Failed - Try Again';
+                    recheckBtn.disabled = false;
+                }
+            } catch (error) {
+                console.error('[UI] Recheck failed:', error);
+                recheckBtn.textContent = '❌ Failed - Try Again';
+                recheckBtn.disabled = false;
+            }
+        };
+
+        // Add button next to the proceed button
+        proceedBtn.parentElement?.appendChild(recheckBtn);
+
+        // Also add a note about cached result
+        const cacheNote = document.createElement('div');
+        cacheNote.className = 'indicator-item severity-info cache-note';
+        cacheNote.innerHTML = isFromCache
+            ? '💡 <em>Result from cache. Click "Re-check with AI" for fresh analysis.</em>'
+            : '💡 <em>Analyzed with local rules. Click "Re-check with AI" for deeper AI analysis.</em>';
+        indicatorsList.appendChild(cacheNote);
     }
 }
 
@@ -551,13 +607,22 @@ downloadCancelBtn.addEventListener('click', async () => {
 
 // Listen for download analysis results
 if (window.electronAPI && window.electronAPI.onDownloadAnalyzed) {
-    window.electronAPI.onDownloadAnalyzed((data) => {
+    window.electronAPI.onDownloadAnalyzed(async (data) => {
         console.log('[UI] Received download analysis:', data);
 
-        // Don't show panel for auto-approved safe downloads (score < 20)
+        // Auto-approve safe downloads (score < 20) - actually proceed with download
         if (data.analysis.riskLevel === 'safe' && data.analysis.riskScore < 20) {
-            console.log('[UI] Auto-approved safe download, showing notification');
-            showDownloadNotification(data.info.fileName, 'Starting download...', 'info');
+            console.log('[UI] Auto-approved safe download, proceeding automatically');
+            showDownloadNotification(data.info.fileName, 'Download approved - starting...', 'success');
+
+            // Actually proceed with the download
+            try {
+                await window.electronAPI.proceedDownload(data.downloadId);
+                console.log('[UI] Auto-download started:', data.downloadId);
+            } catch (error) {
+                console.error('[UI] Auto-download failed:', error);
+                showDownloadNotification(data.info.fileName, 'Download failed', 'error');
+            }
             return;
         }
 

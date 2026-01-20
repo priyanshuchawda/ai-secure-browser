@@ -54,16 +54,16 @@ export const EXTENSION_RISKS: Record<string, ExtensionRisk> = {
     '.rpm': 'medium',
     '.appimage': 'medium',
 
-    // Low Risk - Archives (can contain executables)
-    '.zip': 'low',
-    '.rar': 'low',
-    '.7z': 'low',
-    '.tar': 'low',
-    '.gz': 'low',
-    '.bz2': 'low',
-    '.xz': 'low',
-    '.iso': 'low',
-    '.img': 'low',
+    // Medium Risk - Archives (can contain hidden executables - treat with caution)
+    '.zip': 'medium',
+    '.rar': 'medium',
+    '.7z': 'medium',
+    '.tar': 'medium',
+    '.gz': 'medium',
+    '.bz2': 'medium',
+    '.xz': 'medium',
+    '.iso': 'medium',
+    '.img': 'medium',
 
     // Safe - Common document/media types
     '.pdf': 'safe',

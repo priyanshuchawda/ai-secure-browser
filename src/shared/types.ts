@@ -303,6 +303,7 @@ export enum ReportStatus {
 export interface AnalysisRequest {
     url: string;
     requestId: string;
+    skipCache?: boolean;  // Force fresh analysis, bypass cache
     context?: {
         referrer?: string | null;
         triggerType?: NavigationTrigger;
