@@ -30,7 +30,7 @@ Every URL goes through a comprehensive verification process:
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### Download Protection (NEW!)
+### Download Protection
 
 AI-powered download security that intercepts and analyzes every file before download:
 
@@ -51,13 +51,13 @@ AI-powered download security that intercepts and analyzes every file before down
 │  ┌─────────────────────┐                                    │
 │  │ AI Risk Analysis    │                                    │
 │  │ - Source reputation │                                    │
-│  │ - File type context │                                    │
-│  │ - Download behavior │                                    │
+│  │ - Software verify   │ ← NEW: Google Search verification  │
+│  │ - Official source?  │ ← NEW: Is it from official site?   │
 │  └──────────┬──────────┘                                    │
 │             │                                                │
 │             ▼                                                │
 │  ┌─────────────────────────────────────────────────────┐    │
-│  │  SAFE → Proceed | WARNING → User decides | BLOCK    │    │
+│  │  SAFE → Auto-download | WARNING → User decides      │    │
 │  └─────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -71,6 +71,47 @@ AI-powered download security that intercepts and analyzes every file before down
 | **Medium** | .jar, .py, .sh | Show warning, allow proceed |
 | **High** | .msi, .dll, .reg | Show warning, allow proceed |
 | **Critical** | .exe, .scr, .bat (untrusted) | Block (no override) |
+
+### Software Legitimacy Verification (NEW!)
+
+Downloads are verified with a two-step Google Search check:
+
+| Check | What It Does |
+|-------|-------------|
+| **Is this real software?** | Searches to verify the app exists (e.g., "Lens Studio" → Snap Inc.) |
+| **Is this the official source?** | Checks if the download domain is authorized |
+
+**Example:**
+```
+File: Lens_Studio_5.15.3_win_setup.exe
+Domain: storage.googleapis.com
+
+AI Search Result:
+✅ LEGITIMATE_SOFTWARE - Lens Studio is official AR software by Snap Inc.
+✅ OFFICIAL_SOURCE - Snap uses Google Cloud Storage for distribution
+
+→ Risk Score: LOW (25)
+```
+
+### Intelligent Caching (NEW!)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  CACHE SYSTEM                                                │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  First Visit → Full AI Analysis → Cache Result               │
+│                                                              │
+│  Return Visit → ⚡ Instant from Cache (2ms)                  │
+│                 └─→ [🔄 Re-check with AI] button available   │
+│                                                              │
+│  Cache Persistence:                                          │
+│  • Saves immediately for first 5 entries                     │
+│  • Saves every 5 writes thereafter                           │
+│  • Flushes on app quit                                       │
+│  • Location: data/threat-cache/intelligence.json             │
+└─────────────────────────────────────────────────────────────┘
+```
 
 ### Browser Navigation
 
@@ -91,6 +132,7 @@ Full browser-like navigation with webview integration:
 | **Social Engineering** | Urgency tactics, fear-based messaging, too-good-to-be-true offers |
 | **Homograph Attacks** | Unicode lookalike characters, character substitution |
 | **Dangerous Downloads** | Executable analysis, source reputation, double extension detection |
+| **Fake Software** | AI verifies software legitimacy via web search |
 
 ### Smart Decision Making
 
@@ -98,6 +140,7 @@ Full browser-like navigation with webview integration:
 - **Zero False Positives on Legitimate Sites**: Sites like `chat.com` won't be blocked just because they're similar to `chase.com`
 - **Conservative Blocking**: Only blocks sites with actual evidence of malicious intent
 - **Download Intelligence**: Context-aware download analysis (executables from GitHub = safe, from unknown domain = risky)
+- **Software Verification**: Google Search confirms if software is legitimate before download
 
 ## Quick Start
 
@@ -282,26 +325,35 @@ interface DownloadAnalysis {
 
 ## Roadmap
 
-### Current Features (v1.0)
+### Current Features (v1.0) ✅
 - [x] URL Threat Analysis (3-step AI pipeline)
 - [x] Download Protection with AI analysis
 - [x] Browser Navigation (Back, Forward, Refresh, Home)
 - [x] Website Safety Caching (LRU + Disk persistence)
 - [x] Download Progress Tracking & Notifications
-- [x] Auto-save downloads to default folder
+- [x] Auto-save downloads to system Downloads folder
+- [x] Software Legitimacy Verification (Google Search)
+- [x] Cache Persistence (saves on quit, immediate for first entries)
+- [x] Re-check with AI button (force refresh cached results)
+- [x] AI Failure Graceful Handling (reduced confidence when unavailable)
 
-### Upcoming Features (v1.1)
-- [ ] **SHA256 Hash Checking** - Check file hashes against malware databases
-- [ ] **Sandboxing** - Isolate and analyze suspicious files in a sandbox
+### Upcoming Features (v1.1) - NEXT PRIORITIES
+- [ ] **Multi-tab Browsing** - Open multiple sites in tabs
 - [ ] **Browser History** - Track and manage browsing history
 - [ ] **Bookmarks** - Save and organize favorite websites
+- [ ] **SHA256 Hash Checking** - Check file hashes against VirusTotal/malware databases
+- [ ] **Download History** - View past downloads with security info
+- [ ] **Settings Page** - Configure thresholds, API keys, download location
+
+### Security Enhancements (v1.2)
+- [ ] **Sandboxing** - Isolate and analyze suspicious files in a sandbox
 - [ ] **Password Manager** - Secure password storage with AI-powered security warnings
-- [ ] **Ad Blocker** - Block intrusive ads and trackers
+- [ ] **Certificate Checking** - Verify SSL certificates and warn about issues
 - [ ] **Cookie Management** - Smart cookie consent handling
+- [ ] **Ad/Tracker Blocker** - Block intrusive ads and trackers
 
 ### Future Roadmap (v2.0)
 - [ ] **Extension Support** - Support for Chrome extensions
-- [ ] **Multi-tab Browsing** - Full tabbed browsing experience
 - [ ] **Sync Across Devices** - Cloud sync for settings, bookmarks, history
 - [ ] **VPN Integration** - Built-in VPN for private browsing
 - [ ] **Parental Controls** - Website filtering and time limits
