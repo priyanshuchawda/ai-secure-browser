@@ -16,7 +16,7 @@ export const APP_VERSION = '1.0.0';
 
 export const PERFORMANCE = {
     /** Maximum analysis time before timeout (ms) - increased for 3-step analysis */
-    ANALYSIS_TIMEOUT_MS: 30000,
+    ANALYSIS_TIMEOUT_MS: 60000,
     /** Target latency for 99% of requests (ms) */
     TARGET_LATENCY_P99_MS: 1000,
     /** Memory cache size (number of entries) */
@@ -66,7 +66,7 @@ export const GEMINI = {
     /** Confidence below this triggers deep content analysis */
     DEEP_ANALYSIS_THRESHOLD: 0.5,
     /** Max latency for deep analysis (ms) */
-    DEEP_ANALYSIS_TIMEOUT_MS: 15000
+    DEEP_ANALYSIS_TIMEOUT_MS: 30000
 } as const;
 
 // ============================================

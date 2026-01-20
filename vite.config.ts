@@ -18,31 +18,8 @@ export default defineConfig({
                         }
                     }
                 }
-            },
-            {
-                // Preload scripts - MUST be CommonJS for Electron
-                entry: 'electron/preload/index.ts',
-                vite: {
-                    build: {
-                        outDir: 'dist-electron/preload',
-                        lib: {
-                            entry: 'electron/preload/index.ts',
-                            formats: ['cjs'],
-                            fileName: () => 'index.cjs'
-                        },
-                        rollupOptions: {
-                            external: ['electron'],
-                            output: {
-                                format: 'cjs',
-                                entryFileNames: 'index.cjs'
-                            }
-                        }
-                    }
-                },
-                onstart(options) {
-                    options.reload()
-                }
             }
+            // Note: Preload script is built separately using esbuild (scripts/build-preload.cjs)
         ]),
         renderer()
     ],
