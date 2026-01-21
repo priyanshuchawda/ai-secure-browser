@@ -538,9 +538,18 @@ app.on('before-quit', () => {
     getCacheManager().flush();
 });
 
-// Security: Prevent new window creation
+// Security: Handle new window requests (target="_blank" links)
+// Instead of blocking, send URL to renderer to open in new tab
 app.on('web-contents-created', (_, contents) => {
-    contents.setWindowOpenHandler(() => {
+    contents.setWindowOpenHandler(({ url }) => {
+        console.log('[Main] New window requested:', url);
+
+        // Send URL to renderer to open in new tab
+        if (mainWindow && mainWindow.webContents) {
+            mainWindow.webContents.send('open-url-in-new-tab', url);
+        }
+
+        // Deny the popup window, we'll handle it in the renderer
         return { action: 'deny' };
     });
 });

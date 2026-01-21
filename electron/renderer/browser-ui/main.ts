@@ -23,6 +23,7 @@ declare global {
             goHome: () => void;
             getNavState: () => Promise<{ canGoBack: boolean; canGoForward: boolean; currentUrl: string | null }>;
             onNavStateChange: (callback: (state: { canGoBack: boolean; canGoForward: boolean; currentUrl: string | null }) => void) => void;
+            onOpenUrlInNewTab: (callback: (url: string) => void) => void;  // Handle target="_blank" links
             // Download protection
             proceedDownload: (downloadId: string) => Promise<{ success: boolean }>;
             cancelDownload: (downloadId: string) => Promise<{ success: boolean }>;
@@ -126,14 +127,14 @@ class TabManager {
      */
     createTab(url: string | null = null, makeActive = true): Tab {
         const tabId = `tab-${this.nextTabId++}`;
-        
+
         // Create webview element
         const webview = document.createElement('webview') as Electron.WebviewTag;
         webview.id = `webview-${tabId}`;
         webview.src = url || 'about:blank';
         webview.setAttribute('partition', 'persist:main');
         webview.style.display = 'none';
-        
+
         // Create tab data
         const tab: Tab = {
             id: tabId,
@@ -146,7 +147,7 @@ class TabManager {
 
         // Add webview to container
         this.webviewsContainer.appendChild(webview);
-        
+
         // Store tab
         this.tabs.set(tabId, tab);
 
@@ -172,7 +173,7 @@ class TabManager {
         const tabElement = document.createElement('div');
         tabElement.className = 'tab';
         tabElement.dataset.tabId = tab.id;
-        
+
         tabElement.innerHTML = `
             <div class="tab-security-indicator ${tab.isLoading ? '' : `status-${tab.securityStatus}`}">
                 ${tab.isLoading ? '<div class="tab-loading"></div>' : ''}
@@ -245,7 +246,7 @@ class TabManager {
         // Activate new tab
         this.activeTabId = tabId;
         tab.webviewElement.style.display = 'block';
-        
+
         const tabElement = this.tabsContainer.querySelector(`[data-tab-id="${tabId}"]`);
         tabElement?.classList.add('active');
 
@@ -315,7 +316,7 @@ class TabManager {
         try {
             // Run threat analysis
             const result = await window.electronAPI.analyzeUrl(url) as any;
-            
+
             if (result.success && result.assessment && result.decision) {
                 // Update tab security status
                 if (result.decision.action === 'allow') {
@@ -444,6 +445,18 @@ class TabManager {
         webview.addEventListener('did-stop-loading', () => {
             tab.isLoading = false;
             this.updateTabUI(tab.id);
+        });
+
+        // Handle new window requests (target="_blank" links)
+        webview.addEventListener('new-window', (event: any) => {
+            const url = event.url;
+            console.log('[TabManager] New window requested:', url);
+
+            // Create a new tab with the URL
+            this.createTab(url, true);
+
+            // Prevent the default behavior (which would try to open a new electron window)
+            event.preventDefault();
         });
     }
 
@@ -579,10 +592,24 @@ function showScanPanel(show: boolean): void {
 function updateNavButtons(): void {
     const webview = tabManager.getActiveWebview();
     const activeTab = tabManager.getActiveTab();
-    
-    const canGoBack = webview && webview.canGoBack ? webview.canGoBack() : false;
-    const canGoForward = webview && webview.canGoForward ? webview.canGoForward() : false;
-    const hasUrl = activeTab?.url !== null;
+
+    // Wrap in try-catch because webview may not be ready (dom-ready not fired yet)
+    let canGoBack = false;
+    let canGoForward = false;
+
+    try {
+        if (webview && typeof webview.canGoBack === 'function') {
+            canGoBack = webview.canGoBack();
+        }
+        if (webview && typeof webview.canGoForward === 'function') {
+            canGoForward = webview.canGoForward();
+        }
+    } catch (e) {
+        // Webview not ready yet, buttons stay disabled
+        console.log('[UI] Webview not ready for navigation check');
+    }
+
+    const hasUrl = activeTab?.url !== null && activeTab?.url !== '';
 
     backBtn.disabled = !canGoBack;
     forwardBtn.disabled = !canGoForward;
@@ -1014,6 +1041,17 @@ function showDownloadNotification(fileName: string, message: string, type: 'info
         notification.classList.remove('show');
         setTimeout(() => notification.remove(), 300);
     }, 5000);
+}
+
+// ============================================
+// Handle target="_blank" links (open in new tab)
+// ============================================
+if (window.electronAPI && window.electronAPI.onOpenUrlInNewTab) {
+    window.electronAPI.onOpenUrlInNewTab((url) => {
+        console.log('[UI] Opening URL in new tab:', url);
+        tabManager.createTab(url, true);
+    });
+    console.log('[UI] New tab URL listener registered');
 }
 
 console.log('[UI] Browser UI initialized');

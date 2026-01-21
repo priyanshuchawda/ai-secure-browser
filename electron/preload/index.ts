@@ -129,6 +129,15 @@ const electronAPI = {
         });
     },
 
+    /**
+     * Listen for requests to open URL in new tab (from target="_blank" links)
+     */
+    onOpenUrlInNewTab: (callback: (url: string) => void): void => {
+        ipcRenderer.on('open-url-in-new-tab', (_: unknown, url: string) => {
+            callback(url);
+        });
+    },
+
     // --- Download Protection ---
 
     /**
