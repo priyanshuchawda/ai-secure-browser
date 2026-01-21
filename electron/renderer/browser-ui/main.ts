@@ -245,7 +245,10 @@ class TabManager {
 
         // Activate new tab
         this.activeTabId = tabId;
-        tab.webviewElement.style.display = 'block';
+        // CRITICAL: Must be flex for Electron height propagation
+        tab.webviewElement.style.display = 'flex';
+        tab.webviewElement.style.width = '100%';
+        tab.webviewElement.style.height = '100%';
 
         const tabElement = this.tabsContainer.querySelector(`[data-tab-id="${tabId}"]`);
         tabElement?.classList.add('active');
@@ -348,7 +351,7 @@ class TabManager {
         // Hide panels, show webview
         welcomePanel.style.display = 'none';
         scanPanel.style.display = 'none';
-        webviewContainer.style.display = 'block';
+        webviewContainer.style.display = 'flex';
         browserContent.classList.add('webview-active');
 
         // Update tab

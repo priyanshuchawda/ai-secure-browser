@@ -1,6 +1,5 @@
 import { defineConfig } from 'vite'
 import electron from 'vite-plugin-electron'
-import renderer from 'vite-plugin-electron-renderer'
 import { resolve } from 'path'
 
 // https://vite.dev/config/
@@ -20,8 +19,9 @@ export default defineConfig({
                 }
             }
             // Note: Preload script is built separately using esbuild (scripts/build-preload.cjs)
-        ]),
-        renderer()
+        ])
+        // NOTE: renderer() plugin REMOVED - it causes duplicate DOM elements
+        // with static HTML-based renderer UIs like ours
     ],
     resolve: {
         alias: {
