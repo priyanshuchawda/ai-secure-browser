@@ -92,11 +92,379 @@ interface DownloadScanningData {
     };
 }
 
+// Tab interface
+interface Tab {
+    id: string;
+    title: string;
+    url: string | null;
+    securityStatus: 'safe' | 'warning' | 'danger' | 'unknown';
+    isLoading: boolean;
+    webviewElement: Electron.WebviewTag;
+}
+
+// TabManager class
+class TabManager {
+    private tabs: Map<string, Tab> = new Map();
+    private activeTabId: string | null = null;
+    private tabsContainer: HTMLElement;
+    private webviewsContainer: HTMLElement;
+    private urlInput: HTMLInputElement;
+    private nextTabId = 1;
+
+    constructor(
+        tabsContainer: HTMLElement,
+        webviewsContainer: HTMLElement,
+        urlInput: HTMLInputElement
+    ) {
+        this.tabsContainer = tabsContainer;
+        this.webviewsContainer = webviewsContainer;
+        this.urlInput = urlInput;
+    }
+
+    /**
+     * Create a new tab
+     */
+    createTab(url: string | null = null, makeActive = true): Tab {
+        const tabId = `tab-${this.nextTabId++}`;
+        
+        // Create webview element
+        const webview = document.createElement('webview') as Electron.WebviewTag;
+        webview.id = `webview-${tabId}`;
+        webview.src = url || 'about:blank';
+        webview.setAttribute('partition', 'persist:main');
+        webview.style.display = 'none';
+        
+        // Create tab data
+        const tab: Tab = {
+            id: tabId,
+            title: url ? 'Loading...' : 'New Tab',
+            url: url,
+            securityStatus: 'unknown',
+            isLoading: !!url,
+            webviewElement: webview
+        };
+
+        // Add webview to container
+        this.webviewsContainer.appendChild(webview);
+        
+        // Store tab
+        this.tabs.set(tabId, tab);
+
+        // Render tab UI
+        this.renderTab(tab);
+
+        // Setup webview event listeners
+        this.setupWebviewListeners(tab);
+
+        // Make active if requested
+        if (makeActive) {
+            this.switchTab(tabId);
+        }
+
+        console.log('[TabManager] Created tab:', tabId, url);
+        return tab;
+    }
+
+    /**
+     * Render tab element in the tab bar
+     */
+    private renderTab(tab: Tab): void {
+        const tabElement = document.createElement('div');
+        tabElement.className = 'tab';
+        tabElement.dataset.tabId = tab.id;
+        
+        tabElement.innerHTML = `
+            <div class="tab-security-indicator ${tab.isLoading ? '' : `status-${tab.securityStatus}`}">
+                ${tab.isLoading ? '<div class="tab-loading"></div>' : ''}
+            </div>
+            <span class="tab-title">${tab.title}</span>
+            <button class="tab-close" title="Close tab">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+            </button>
+        `;
+
+        // Click to switch tab
+        tabElement.addEventListener('click', (e) => {
+            if (!(e.target as HTMLElement).closest('.tab-close')) {
+                this.switchTab(tab.id);
+            }
+        });
+
+        // Close button
+        const closeBtn = tabElement.querySelector('.tab-close');
+        closeBtn?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.closeTab(tab.id);
+        });
+
+        this.tabsContainer.appendChild(tabElement);
+    }
+
+    /**
+     * Update tab UI
+     */
+    private updateTabUI(tabId: string): void {
+        const tab = this.tabs.get(tabId);
+        if (!tab) return;
+
+        const tabElement = this.tabsContainer.querySelector(`[data-tab-id="${tabId}"]`);
+        if (!tabElement) return;
+
+        const indicator = tabElement.querySelector('.tab-security-indicator');
+        const titleElement = tabElement.querySelector('.tab-title');
+
+        if (indicator) {
+            indicator.className = `tab-security-indicator ${tab.isLoading ? '' : `status-${tab.securityStatus}`}`;
+            indicator.innerHTML = tab.isLoading ? '<div class="tab-loading"></div>' : '';
+        }
+
+        if (titleElement) {
+            titleElement.textContent = tab.title;
+        }
+    }
+
+    /**
+     * Switch to a different tab
+     */
+    switchTab(tabId: string): void {
+        const tab = this.tabs.get(tabId);
+        if (!tab) return;
+
+        // Deactivate previous tab
+        if (this.activeTabId) {
+            const prevTab = this.tabs.get(this.activeTabId);
+            if (prevTab) {
+                prevTab.webviewElement.style.display = 'none';
+                const prevTabElement = this.tabsContainer.querySelector(`[data-tab-id="${this.activeTabId}"]`);
+                prevTabElement?.classList.remove('active');
+            }
+        }
+
+        // Activate new tab
+        this.activeTabId = tabId;
+        tab.webviewElement.style.display = 'block';
+        
+        const tabElement = this.tabsContainer.querySelector(`[data-tab-id="${tabId}"]`);
+        tabElement?.classList.add('active');
+
+        // Update URL bar
+        this.urlInput.value = tab.url || '';
+
+        // Update navigation buttons
+        updateNavButtons();
+
+        console.log('[TabManager] Switched to tab:', tabId);
+    }
+
+    /**
+     * Close a tab
+     */
+    closeTab(tabId: string): void {
+        const tab = this.tabs.get(tabId);
+        if (!tab) return;
+
+        // Don't close if it's the last tab
+        if (this.tabs.size === 1) {
+            console.log('[TabManager] Cannot close last tab');
+            return;
+        }
+
+        // Remove webview
+        tab.webviewElement.remove();
+
+        // Remove tab element
+        const tabElement = this.tabsContainer.querySelector(`[data-tab-id="${tabId}"]`);
+        tabElement?.remove();
+
+        // Remove from map
+        this.tabs.delete(tabId);
+
+        // If closing active tab, switch to another tab
+        if (this.activeTabId === tabId) {
+            const remainingTabs = Array.from(this.tabs.keys());
+            if (remainingTabs.length > 0) {
+                this.switchTab(remainingTabs[0]);
+            }
+        }
+
+        console.log('[TabManager] Closed tab:', tabId);
+    }
+
+    /**
+     * Navigate active tab to URL
+     */
+    async navigateActiveTab(url: string): Promise<void> {
+        if (!this.activeTabId) return;
+
+        const tab = this.tabs.get(this.activeTabId);
+        if (!tab) return;
+
+        // Update tab state
+        tab.url = url;
+        tab.isLoading = true;
+        tab.title = 'Loading...';
+        tab.securityStatus = 'unknown';
+        this.updateTabUI(tab.id);
+
+        // Show scan panel
+        showScanPanel(true);
+        updateScanStatus('analyzing', url);
+
+        try {
+            // Run threat analysis
+            const result = await window.electronAPI.analyzeUrl(url) as any;
+            
+            if (result.success && result.assessment && result.decision) {
+                // Update tab security status
+                if (result.decision.action === 'allow') {
+                    tab.securityStatus = 'safe';
+                } else if (result.decision.action === 'warn') {
+                    tab.securityStatus = 'warning';
+                } else {
+                    tab.securityStatus = 'danger';
+                }
+
+                displayScanResults(result.assessment, result.decision, url, tab);
+            } else {
+                updateScanStatus('error', url);
+                setTimeout(() => this.loadUrlInTab(tab.id, url), 1000);
+            }
+        } catch (error) {
+            console.error('[TabManager] Navigation error:', error);
+            updateScanStatus('error', url);
+        }
+    }
+
+    /**
+     * Load URL in tab's webview
+     */
+    loadUrlInTab(tabId: string, url: string): void {
+        const tab = this.tabs.get(tabId);
+        if (!tab) return;
+
+        // Hide panels, show webview
+        welcomePanel.style.display = 'none';
+        scanPanel.style.display = 'none';
+        webviewContainer.style.display = 'block';
+        browserContent.classList.add('webview-active');
+
+        // Update tab
+        tab.url = url;
+        tab.webviewElement.src = url;
+        tab.isLoading = true;
+        this.updateTabUI(tabId);
+
+        console.log('[TabManager] Loading URL in tab:', tabId, url);
+    }
+
+    /**
+     * Get active tab
+     */
+    getActiveTab(): Tab | null {
+        return this.activeTabId ? this.tabs.get(this.activeTabId) || null : null;
+    }
+
+    /**
+     * Get active webview
+     */
+    getActiveWebview(): Electron.WebviewTag | null {
+        const tab = this.getActiveTab();
+        return tab ? tab.webviewElement : null;
+    }
+
+    /**
+     * Update active tab title
+     */
+    updateActiveTabTitle(title: string): void {
+        const tab = this.getActiveTab();
+        if (tab) {
+            tab.title = title || tab.url || 'Untitled';
+            this.updateTabUI(tab.id);
+        }
+    }
+
+    /**
+     * Setup webview event listeners for a tab
+     */
+    private setupWebviewListeners(tab: Tab): void {
+        const webview = tab.webviewElement;
+
+        // Page title updated
+        webview.addEventListener('page-title-updated', (event: any) => {
+            if (this.activeTabId === tab.id) {
+                tab.title = event.title || tab.url || 'Untitled';
+                this.updateTabUI(tab.id);
+            }
+        });
+
+        // Navigation events
+        webview.addEventListener('did-navigate', (event: any) => {
+            if (this.activeTabId === tab.id) {
+                tab.url = event.url;
+                this.urlInput.value = event.url;
+                updateNavButtons();
+            }
+        });
+
+        webview.addEventListener('did-navigate-in-page', (event: any) => {
+            if (this.activeTabId === tab.id) {
+                tab.url = event.url;
+                this.urlInput.value = event.url;
+                updateNavButtons();
+            }
+        });
+
+        // Loading finished
+        webview.addEventListener('did-finish-load', () => {
+            tab.isLoading = false;
+            this.updateTabUI(tab.id);
+            if (this.activeTabId === tab.id) {
+                updateNavButtons();
+            }
+        });
+
+        // Loading failed
+        webview.addEventListener('did-fail-load', (event: any) => {
+            if (event.errorCode && event.errorCode !== -3) {
+                console.warn(`[TabManager] Tab ${tab.id} load failed:`, event.errorDescription);
+            }
+            tab.isLoading = false;
+            this.updateTabUI(tab.id);
+        });
+
+        // Started loading
+        webview.addEventListener('did-start-loading', () => {
+            tab.isLoading = true;
+            this.updateTabUI(tab.id);
+        });
+
+        // Stopped loading
+        webview.addEventListener('did-stop-loading', () => {
+            tab.isLoading = false;
+            this.updateTabUI(tab.id);
+        });
+    }
+
+    /**
+     * Get number of tabs
+     */
+    getTabCount(): number {
+        return this.tabs.size;
+    }
+}
+
 // Get DOM elements
 // DOM Elements - Input & Status
 const urlInput = document.getElementById('url-input') as HTMLInputElement;
 const goBtn = document.getElementById('go-btn') as HTMLButtonElement;
 const statusIndicator = document.getElementById('status') as HTMLDivElement;
+
+// DOM Elements - Tabs
+const tabBar = document.getElementById('tab-bar') as HTMLDivElement;
+const tabsContainer = document.getElementById('tabs-container') as HTMLDivElement;
+const newTabBtn = document.getElementById('new-tab-btn') as HTMLButtonElement;
 
 // DOM Elements - Panels
 const welcomePanel = document.getElementById('welcome-panel') as HTMLDivElement;
@@ -122,7 +490,7 @@ const homeBtn = document.getElementById('home-btn') as HTMLButtonElement;
 
 // DOM Elements - Webview
 const webviewContainer = document.getElementById('webview-container') as HTMLDivElement;
-const browserWebview = document.getElementById('browser-webview') as Electron.WebviewTag;
+const webviewsContainer = document.getElementById('webviews-container') as HTMLDivElement;
 const browserContent = document.querySelector('.browser-content') as HTMLElement;
 
 // DOM Elements - Download Panel
@@ -141,11 +509,17 @@ const downloadProceedBtn = document.getElementById('download-proceed-btn') as HT
 const downloadCancelBtn = document.getElementById('download-cancel-btn') as HTMLButtonElement;
 const fileIcon = document.getElementById('file-icon') as HTMLDivElement;
 
-// Track current URL for navigation
+// Initialize TabManager
+const tabManager = new TabManager(tabsContainer, webviewsContainer, urlInput);
+
+// Track current URL for navigation (kept for compatibility)
 let currentUrl: string | null = null;
 
 // Track current download for user decision
 let currentDownloadId: string | null = null;
+
+// Create initial tab
+tabManager.createTab(null, true);
 
 /**
  * Navigate to URL with threat checking
@@ -161,64 +535,21 @@ async function navigateToUrl(): Promise<void> {
         fullUrl = 'https://' + url;
     }
 
-    // Reset UI
-    showScanPanel(true);
-    updateScanStatus('analyzing', fullUrl);
-
     console.log('[UI] Navigating to:', fullUrl);
 
-    try {
-        // Request threat analysis via context bridge
-        const result = await window.electronAPI.analyzeUrl(fullUrl) as {
-            success: boolean;
-            assessment?: {
-                threatType: string | null;
-                confidence: number;
-                indicators: Array<{ type: string; description: string; severity: string }>;
-                analysisMethod: string;
-            };
-            decision?: {
-                action: string;
-                rationale: string;
-            };
-        };
-
-        console.log('[UI] Analysis result:', result);
-
-        if (result.success && result.assessment && result.decision) {
-            displayScanResults(result.assessment, result.decision, fullUrl);
-        } else {
-            // Error fallback - still navigate
-            updateScanStatus('error', fullUrl);
-            setTimeout(() => loadUrlInWebview(fullUrl), 1000);
-        }
-
-    } catch (error) {
-        console.error('[UI] Navigation error:', error);
-        updateScanStatus('error', fullUrl);
-    }
+    // Use TabManager to navigate
+    await tabManager.navigateActiveTab(fullUrl);
 }
 
 /**
- * Load URL in the webview
+ * Load URL in the webview (legacy function - now uses TabManager)
  */
 function loadUrlInWebview(url: string): void {
-    currentUrl = url;
-
-    // Hide welcome and scan panels, show webview
-    welcomePanel.style.display = 'none';
-    scanPanel.style.display = 'none';
-    webviewContainer.style.display = 'block';
-    browserContent.classList.add('webview-active');
-
-    // Load the URL in webview
-    browserWebview.src = url;
-    urlInput.value = url;
-
-    // Update navigation button states
-    updateNavButtons();
-
-    console.log('[UI] Loading in webview:', url);
+    const activeTab = tabManager.getActiveTab();
+    if (activeTab) {
+        tabManager.loadUrlInTab(activeTab.id, url);
+        currentUrl = url;
+    }
 }
 
 /**
@@ -246,9 +577,12 @@ function showScanPanel(show: boolean): void {
  * Update navigation button states based on webview state
  */
 function updateNavButtons(): void {
-    const canGoBack = browserWebview && browserWebview.canGoBack ? browserWebview.canGoBack() : false;
-    const canGoForward = browserWebview && browserWebview.canGoForward ? browserWebview.canGoForward() : false;
-    const hasUrl = currentUrl !== null;
+    const webview = tabManager.getActiveWebview();
+    const activeTab = tabManager.getActiveTab();
+    
+    const canGoBack = webview && webview.canGoBack ? webview.canGoBack() : false;
+    const canGoForward = webview && webview.canGoForward ? webview.canGoForward() : false;
+    const hasUrl = activeTab?.url !== null;
 
     backBtn.disabled = !canGoBack;
     forwardBtn.disabled = !canGoForward;
@@ -280,7 +614,7 @@ function updateScanStatus(status: 'analyzing' | 'error', url: string): void {
 /**
  * Display final scan results
  */
-function displayScanResults(assessment: any, decision: any, url: string): void {
+function displayScanResults(assessment: any, decision: any, url: string, tab: Tab): void {
     const isSafe = decision.action === 'allow';
     const isWarning = decision.action === 'warn';
     const isBlock = decision.action === 'block';
@@ -367,7 +701,7 @@ function displayScanResults(assessment: any, decision: any, url: string): void {
             try {
                 const result = await window.electronAPI.forceRefresh(url) as any;
                 if (result.success && result.assessment && result.decision) {
-                    displayScanResults(result.assessment, result.decision, url);
+                    displayScanResults(result.assessment, result.decision, url, tab);
                 } else {
                     recheckBtn.textContent = '❌ Failed - Try Again';
                     recheckBtn.disabled = false;
@@ -417,61 +751,39 @@ homeBtn.addEventListener('click', () => {
     updateNavButtons();
 });
 
-// Navigation button event listeners - use webview directly
+// New Tab button
+newTabBtn.addEventListener('click', () => {
+    console.log('[UI] New tab button clicked');
+    tabManager.createTab(null, true);
+    // Show welcome panel
+    welcomePanel.style.display = 'block';
+    scanPanel.style.display = 'none';
+    webviewContainer.style.display = 'none';
+    browserContent.classList.remove('webview-active');
+});
+
+// Navigation button event listeners - use active webview
 backBtn.addEventListener('click', () => {
     console.log('[UI] Back button clicked');
-    if (browserWebview && browserWebview.canGoBack()) {
-        browserWebview.goBack();
+    const webview = tabManager.getActiveWebview();
+    if (webview && webview.canGoBack()) {
+        webview.goBack();
     }
 });
 
 forwardBtn.addEventListener('click', () => {
     console.log('[UI] Forward button clicked');
-    if (browserWebview && browserWebview.canGoForward()) {
-        browserWebview.goForward();
+    const webview = tabManager.getActiveWebview();
+    if (webview && webview.canGoForward()) {
+        webview.goForward();
     }
 });
 
 refreshBtn.addEventListener('click', () => {
     console.log('[UI] Refresh button clicked');
-    if (browserWebview) {
-        browserWebview.reload();
-    }
-});
-
-// ============================================
-// Webview Event Listeners
-// ============================================
-
-// Update URL bar when webview navigates
-browserWebview.addEventListener('did-navigate', (event: any) => {
-    console.log('[UI] Webview navigated to:', event.url);
-    currentUrl = event.url;
-    urlInput.value = event.url;
-    updateNavButtons();
-});
-
-browserWebview.addEventListener('did-navigate-in-page', (event: any) => {
-    console.log('[UI] Webview in-page navigation:', event.url);
-    currentUrl = event.url;
-    urlInput.value = event.url;
-    updateNavButtons();
-});
-
-// Update nav buttons when webview finishes loading
-browserWebview.addEventListener('did-finish-load', () => {
-    console.log('[UI] Webview finished loading');
-    updateNavButtons();
-});
-
-// Handle webview loading errors
-browserWebview.addEventListener('did-fail-load', (event: any) => {
-    console.error('[UI] Webview failed to load:', event.errorDescription);
-
-    // Show error message to user for significant errors (not just cancelled loads)
-    if (event.errorCode && event.errorCode !== -3) { // -3 is ERR_ABORTED (user cancelled)
-        // Could show an error page here
-        console.warn(`[UI] Load failed: ${event.errorDescription} (${event.errorCode})`);
+    const webview = tabManager.getActiveWebview();
+    if (webview) {
+        webview.reload();
     }
 });
 

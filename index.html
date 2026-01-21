@@ -10,6 +10,18 @@
 
 <body>
   <div id="app">
+    <!-- Tab Bar -->
+    <div class="tab-bar" id="tab-bar">
+      <div class="tabs-container" id="tabs-container">
+        <!-- Tabs will be dynamically inserted here -->
+      </div>
+      <button class="new-tab-btn" id="new-tab-btn" title="New Tab">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+      </button>
+    </div>
+
     <header class="browser-header">
       <div class="nav-controls">
         <button id="back-btn" class="nav-btn" title="Go Back" disabled>
@@ -88,9 +100,11 @@
         </div>
       </div>
 
-      <!-- Webview Container (for displaying websites) -->
+      <!-- Webviews Container (for displaying websites) -->
       <div id="webview-container" style="display: none;">
-        <webview id="browser-webview" src="about:blank" partition="persist:main"></webview>
+        <div class="webviews-container" id="webviews-container">
+          <!-- Webviews will be dynamically created here -->
+        </div>
       </div>
 
       <!-- Download Warning Panel (modal overlay) -->
