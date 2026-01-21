@@ -25,11 +25,36 @@ body {
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
     Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  background: #0a0a1a;
   color: #e0e0e0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
+}
+
+body::before {
+  content: '';
+  position: absolute;
+  inset: -50%;
+  background-image:
+    radial-gradient(circle at 20% 20%, rgba(74, 144, 217, 0.15) 0%, transparent 40%),
+    radial-gradient(circle at 80% 20%, rgba(168, 85, 247, 0.15) 0%, transparent 40%),
+    radial-gradient(circle at 50% 80%, rgba(74, 222, 128, 0.1) 0%, transparent 40%),
+    radial-gradient(circle at 80% 80%, rgba(74, 144, 217, 0.1) 0%, transparent 40%);
+  filter: blur(80px);
+  z-index: -2;
+  animation: aurora-app 40s infinite alternate ease-in-out;
+}
+
+@keyframes aurora-app {
+  0% {
+    transform: rotate(0deg) scale(1);
+  }
+
+  100% {
+    transform: rotate(5deg) scale(1.1);
+  }
 }
 
 #app {
@@ -415,6 +440,20 @@ body {
   overflow: hidden;
 }
 
+.browser-content::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(to right, rgba(255, 255, 255, 0.01) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.01) 1px, transparent 1px);
+  background-size: 30px 30px, 60px 60px, 60px 60px;
+  mask-image: radial-gradient(circle at 50% 50%, black, transparent 85%);
+  pointer-events: none;
+  z-index: 0;
+}
+
 /* When webview is active, content should fill the space */
 .browser-content.webview-active {
   padding: 0;
@@ -424,22 +463,43 @@ body {
 
 .welcome-message {
   text-align: center;
-  max-width: 500px;
+  max-width: 600px;
+  position: relative;
+  z-index: 1;
+  animation: fadeInDown 0.8s ease-out;
+}
+
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .welcome-message h1 {
-  font-size: 2.5rem;
-  margin-bottom: 16px;
-  background: linear-gradient(135deg, #4a90d9 0%, #a855f7 100%);
+  font-size: 3.5rem;
+  letter-spacing: -1px;
+  font-weight: 800;
+  margin-bottom: 20px;
+  background: linear-gradient(135deg, #fff 30%, #4a90d9 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+  filter: drop-shadow(0 0 20px rgba(74, 144, 217, 0.3));
 }
 
 .welcome-message p {
-  font-size: 1.1rem;
-  color: rgba(255, 255, 255, 0.7);
-  margin-bottom: 8px;
+  font-size: 1.2rem;
+  color: rgba(255, 255, 255, 0.8);
+  margin-bottom: 12px;
+  max-width: 80%;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .welcome-message .status-info {
@@ -484,13 +544,19 @@ body {
 /* ========================================= */
 
 .scan-results {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 16px;
+  background: rgba(18, 18, 42, 0.4);
+  border-radius: 20px;
   padding: 32px;
-  max-width: 600px;
+  max-width: 620px;
   width: 100%;
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.4),
+    0 0 40px rgba(74, 144, 217, 0.05);
+  position: relative;
+  z-index: 10;
 }
 
 .scan-header {

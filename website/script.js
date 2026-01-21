@@ -1,6 +1,11 @@
 // AI Secure Browser - Landing Page Script
 
 document.addEventListener('DOMContentLoaded', () => {
+    // Initialize Lucide icons
+    if (window.lucide) {
+        window.lucide.createIcons();
+    }
+
     // Smooth scroll for anchor links
     document.querySelectorAll('a[href^="#"]').forEach(anchor => {
         anchor.addEventListener('click', function (e) {
@@ -17,119 +22,104 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Navbar scroll effect
     const navbar = document.querySelector('.navbar');
-    let lastScroll = 0;
-
     window.addEventListener('scroll', () => {
-        const currentScroll = window.pageYOffset;
-
-        if (currentScroll > 100) {
-            navbar.style.background = 'rgba(10, 10, 26, 0.95)';
+        if (window.pageYOffset > 50) {
+            navbar.style.padding = '8px 32px';
+            navbar.style.background = 'rgba(10, 10, 26, 0.85)';
+            navbar.style.width = 'calc(100% - 32px)';
         } else {
-            navbar.style.background = 'rgba(10, 10, 26, 0.8)';
+            navbar.style.padding = '12px 32px';
+            navbar.style.background = 'rgba(10, 10, 26, 0.6)';
+            navbar.style.width = 'calc(100% - 48px)';
         }
-
-        lastScroll = currentScroll;
     });
 
-    // Intersection Observer for animations
+    // Intersection Observer for scroll animations
     const observerOptions = {
         threshold: 0.1,
         rootMargin: '0px 0px -50px 0px'
     };
 
-    const fadeInObserver = new IntersectionObserver((entries) => {
+    const revealObserver = new IntersectionObserver((entries) => {
         entries.forEach(entry => {
             if (entry.isIntersecting) {
-                entry.target.classList.add('fade-in-visible');
-                fadeInObserver.unobserve(entry.target);
+                entry.target.classList.add('revealed');
+                revealObserver.unobserve(entry.target);
             }
         });
     }, observerOptions);
 
-    // Add fade-in animation to sections
-    document.querySelectorAll('.feature-card, .pipeline-step, .tech-card, .roadmap-item').forEach(el => {
-        el.classList.add('fade-in');
-        fadeInObserver.observe(el);
-    });
-
-    // Browser mockup cycling text
-    const scanTexts = [
-        'Analyzing URL...',
-        'Checking domain reputation...',
-        'Fetching page content...',
-        'Running AI analysis...'
+    // Apply animation classes to elements
+    const revealElements = [
+        '.bento-item', 
+        '.pipeline-step', 
+        '.tech-card', 
+        '.section-header', 
+        '.hero-content > *',
+        '.cta-card'
     ];
 
-    const scanResults = [
-        '✓ Site verified as SAFE',
-        '✓ No threats detected',
-        '✓ Trusted source confirmed',
-        '✓ Download approved'
+    revealElements.forEach(selector => {
+        document.querySelectorAll(selector).forEach(el => {
+            el.classList.add('reveal-on-scroll');
+            revealObserver.observe(el);
+        });
+    });
+
+    // Mockup Text Cycling
+    const scanTexts = [
+        'Analyzing URL...',
+        'Checking SSL...',
+        'Fetching Reputation...',
+        'Vetting Assets...'
     ];
 
     let textIndex = 0;
     const scanTextEl = document.querySelector('.scan-text');
-    const scanResultEl = document.querySelector('.scan-result');
-
-    if (scanTextEl && scanResultEl) {
+    
+    if (scanTextEl) {
         setInterval(() => {
             textIndex = (textIndex + 1) % scanTexts.length;
-
             scanTextEl.style.opacity = '0';
-            scanResultEl.style.opacity = '0';
-
             setTimeout(() => {
                 scanTextEl.textContent = scanTexts[textIndex];
-                scanResultEl.textContent = scanResults[textIndex];
                 scanTextEl.style.opacity = '1';
-            }, 300);
-
-            setTimeout(() => {
-                scanResultEl.style.opacity = '1';
-            }, 2300);
-        }, 4000);
+            }, 500);
+        }, 3000);
     }
 
-    // Add hover effects to feature cards
-    document.querySelectorAll('.feature-card').forEach(card => {
-        card.addEventListener('mouseenter', () => {
-            card.style.transform = 'translateY(-8px)';
-        });
-
-        card.addEventListener('mouseleave', () => {
-            card.style.transform = 'translateY(0)';
-        });
-    });
-
-    // Parallax effect for hero background
-    window.addEventListener('scroll', () => {
-        const scrolled = window.pageYOffset;
-        const heroBg = document.querySelector('.hero-bg');
-
-        if (heroBg && scrolled < window.innerHeight) {
-            heroBg.style.transform = `translateY(${scrolled * 0.3}px)`;
+    // Add CSS for Reveal Animations
+    const style = document.createElement('style');
+    style.textContent = `
+        .reveal-on-scroll {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1), 
+                        transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
         }
-    });
+        
+        .revealed {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        /* Stagger delays for bento items */
+        .bento-item:nth-child(1) { transition-delay: 0.1s; }
+        .bento-item:nth-child(2) { transition-delay: 0.2s; }
+        .bento-item:nth-child(3) { transition-delay: 0.3s; }
+        .bento-item:nth-child(4) { transition-delay: 0.4s; }
+        .bento-item:nth-child(5) { transition-delay: 0.5s; }
+        .bento-item:nth-child(6) { transition-delay: 0.6s; }
+        
+        /* Stagger for tech cards */
+        .tech-card:nth-child(1) { transition-delay: 0.1s; }
+        .tech-card:nth-child(2) { transition-delay: 0.2s; }
+        .tech-card:nth-child(3) { transition-delay: 0.3s; }
+        .tech-card:nth-child(4) { transition-delay: 0.4s; }
 
-    console.log('AI Secure Browser landing page loaded');
+        .scan-text { transition: opacity 0.5s ease; }
+    `;
+    document.head.appendChild(style);
+
+    console.log('AI Secure Browser: Premium Landing Page Initialized');
 });
-
-// Add CSS for fade-in animation
-const style = document.createElement('style');
-style.textContent = `
-    .fade-in {
-        opacity: 0;
-        transform: translateY(30px);
-        transition: opacity 0.6s ease, transform 0.6s ease;
-    }
-    
-    .fade-in-visible {
-        opacity: 1;
-        transform: translateY(0);
-    }
-    
-    .scan-text, .scan-result {
-        transition: opacity 0.3s ease;
-    }
-`;
-document.head.appendChild(style);
