@@ -1,19 +1,23 @@
 /**
  * Download Interceptor
  * Intercepts downloads and analyzes them before allowing
+ * Now includes VirusTotal file hash scanning!
  */
 
 import { Session, DownloadItem, WebContents, BrowserWindow, app } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { analyzeDownload, type DownloadInfo, type DownloadAnalysis } from './ai-download-analyzer';
+import { analyzeDownloadedFile, type VTFileAnalysis } from './vt-download-analyzer';
+import { combineDownloadResults, type CombinedDownloadAnalysis } from './combined-download-analyzer';
 
 // Store for pending downloads awaiting user decision
 interface PendingDownload {
     item: DownloadItem;
     info: DownloadInfo;
-    analysis: DownloadAnalysis;
+    analysis: DownloadAnalysis | CombinedDownloadAnalysis;
     timestamp: number;
+    tempPath?: string; // Temporary download location for VT scanning
 }
 
 // Store for active downloads (being downloaded)
@@ -28,7 +32,7 @@ const pendingDownloads: Map<string, PendingDownload> = new Map();
 const activeDownloads: Map<string, ActiveDownload> = new Map();
 
 // Callback types
-type DownloadAnalyzedCallback = (downloadId: string, info: DownloadInfo, analysis: DownloadAnalysis) => void;
+type DownloadAnalyzedCallback = (downloadId: string, info: DownloadInfo, analysis: DownloadAnalysis | CombinedDownloadAnalysis) => void;
 type DownloadProgressCallback = (downloadId: string, progress: number, received: number, total: number) => void;
 type DownloadCompleteCallback = (downloadId: string, info: DownloadInfo, savePath: string, success: boolean) => void;
 type DownloadScanningCallback = (downloadId: string, info: DownloadInfo) => void;
@@ -66,6 +70,24 @@ function getDefaultDownloadPath(fileName: string): string {
     console.log('[DownloadInterceptor] Save path:', path.join(downloadsDir, fileName));
 
     return path.join(downloadsDir, fileName);
+}
+
+/**
+ * Get temporary download path for VT scanning
+ */
+function getTempDownloadPath(fileName: string): string {
+    const tempDir = app.getPath('temp');
+    const uniqueId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const tempPath = path.join(tempDir, 'ai-secure-browser-downloads', uniqueId, fileName);
+    
+    // Ensure temp directory exists
+    const tempFolder = path.dirname(tempPath);
+    if (!fs.existsSync(tempFolder)) {
+        fs.mkdirSync(tempFolder, { recursive: true });
+    }
+    
+    console.log('[DownloadInterceptor] Temp path:', tempPath);
+    return tempPath;
 }
 
 /**
@@ -109,12 +131,9 @@ export function setupDownloadInterception(
             domain
         });
 
-        // Set default save path (no prompt)
-        const savePath = getDefaultDownloadPath(fileName);
-        item.setSavePath(savePath);
-
-        // Pause the download while we analyze
-        item.pause();
+        // Download to TEMP location first for VT scanning
+        const tempPath = getTempDownloadPath(fileName);
+        item.setSavePath(tempPath);
 
         const downloadInfo: DownloadInfo = {
             fileName,
@@ -131,22 +150,56 @@ export function setupDownloadInterception(
                 onDownloadScanning(downloadId, downloadInfo);
             }
 
-            // Analyze the download
-            console.log('[DownloadInterceptor] Analyzing download...');
-            const analysis = await analyzeDownload(downloadInfo);
+            // STEP 1: Start Gemini AI analysis in parallel while file downloads
+            console.log('[DownloadInterceptor] Starting Gemini analysis...');
+            const geminiPromise = analyzeDownload(downloadInfo);
 
-            console.log('[DownloadInterceptor] Analysis result:', {
-                riskLevel: analysis.riskLevel,
-                riskScore: analysis.riskScore,
-                shouldBlock: analysis.shouldBlock
+            // STEP 2: Wait for download to complete, then calculate hash and check VT
+            console.log('[DownloadInterceptor] Waiting for download to complete...');
+            
+            // Resume download so it starts
+            item.resume();
+
+            // Wait for download to finish
+            const downloadCompleted = await new Promise<boolean>((resolve) => {
+                item.once('done', (event, state) => {
+                    resolve(state === 'completed');
+                });
             });
 
-            // Store pending download
+            if (!downloadCompleted) {
+                console.log('[DownloadInterceptor] Download failed or cancelled');
+                return;
+            }
+
+            console.log('[DownloadInterceptor] Download complete, starting VT scan...');
+
+            // STEP 3: Run VT file hash scan (after download completes)
+            const vtPromise = analyzeDownloadedFile(tempPath, fileName);
+
+            // STEP 4: Wait for both analyses to complete
+            const [geminiAnalysis, vtAnalysis] = await Promise.all([geminiPromise, vtPromise]);
+
+            console.log('[DownloadInterceptor] Both analyses complete');
+            console.log('[DownloadInterceptor] Gemini:', geminiAnalysis.riskLevel, geminiAnalysis.riskScore);
+            console.log('[DownloadInterceptor] VT:', vtAnalysis.inDatabase ? `${vtAnalysis.positives}/${vtAnalysis.total}` : 'Not in DB');
+
+            // STEP 5: Combine results
+            const combinedAnalysis = combineDownloadResults(geminiAnalysis, vtAnalysis);
+
+            console.log('[DownloadInterceptor] Combined result:', {
+                riskLevel: combinedAnalysis.riskLevel,
+                riskScore: combinedAnalysis.riskScore,
+                shouldBlock: combinedAnalysis.shouldBlock
+            });
+
+            // Store pending download with temp path
             pendingDownloads.set(downloadId, {
                 item,
                 info: downloadInfo,
-                analysis,
-                timestamp: Date.now()
+                analysis: combinedAnalysis,
+                timestamp: Date.now(),
+                tempPath
             });
 
             // Determine if this file type requires user confirmation
@@ -155,33 +208,58 @@ export function setupDownloadInterception(
             const archiveExtensions = ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2'];
             const requiresConfirmation = dangerousExtensions.includes(extension) || archiveExtensions.includes(extension);
 
-            // Only auto-proceed if:
-            // 1. File is safe (low risk score)
-            // 2. File is NOT an executable or archive
-            // 3. From trusted source
-            if (analysis.riskLevel === 'safe' && analysis.riskScore < 20 && !requiresConfirmation) {
-                console.log('[DownloadInterceptor] Auto-proceeding safe download (non-executable)');
-                startDownloadWithProgress(downloadId, item, downloadInfo, savePath);
+            // Auto-block if VT says malware and no override allowed
+            if (combinedAnalysis.shouldBlock && !combinedAnalysis.allowOverride) {
+                console.log('[DownloadInterceptor] BLOCKING: Confirmed malware by VirusTotal');
+                
+                // Delete temp file
+                try {
+                    fs.unlinkSync(tempPath);
+                } catch (e) {
+                    console.error('[DownloadInterceptor] Error deleting temp file:', e);
+                }
+                
                 pendingDownloads.delete(downloadId);
-
-                // Notify UI of auto-approved download (with progress)
-                onDownloadAnalyzed(downloadId, downloadInfo, {
-                    ...analysis,
-                    reasoning: 'Download approved automatically - safe file from trusted source.'
-                });
+                
+                // Notify UI of blocked download
+                onDownloadAnalyzed(downloadId, downloadInfo, combinedAnalysis);
                 return;
             }
 
-            // For all executables/archives and risky downloads: ALWAYS show warning UI
-            console.log(`[DownloadInterceptor] Showing warning UI for: ${fileName} (${analysis.riskLevel})`);
-            onDownloadAnalyzed(downloadId, downloadInfo, analysis);
-
-            // If should block and no override allowed, cancel immediately
-            if (analysis.shouldBlock && !analysis.allowOverride) {
-                console.log('[DownloadInterceptor] Blocking dangerous download');
-                item.cancel();
+            // Only auto-proceed if:
+            // 1. File is safe (low risk score)
+            // 2. File is NOT an executable or archive
+            // 3. VT says clean or not in database
+            // 4. From trusted source
+            if (combinedAnalysis.riskLevel === 'safe' && combinedAnalysis.riskScore < 20 && !requiresConfirmation) {
+                console.log('[DownloadInterceptor] Auto-proceeding safe download (verified by VT + Gemini)');
+                
+                // Move from temp to final location
+                const finalPath = getDefaultDownloadPath(fileName);
+                try {
+                    fs.renameSync(tempPath, finalPath);
+                    console.log('[DownloadInterceptor] Moved to final location:', finalPath);
+                } catch (e) {
+                    console.error('[DownloadInterceptor] Error moving file:', e);
+                }
+                
                 pendingDownloads.delete(downloadId);
+
+                // Notify UI of auto-approved download
+                onDownloadAnalyzed(downloadId, downloadInfo, {
+                    ...combinedAnalysis,
+                    reasoning: 'Download approved automatically - verified safe by VirusTotal and AI.'
+                });
+                
+                if (onDownloadComplete) {
+                    onDownloadComplete(downloadId, downloadInfo, finalPath, true);
+                }
+                return;
             }
+
+            // For all other cases: ALWAYS show warning UI
+            console.log(`[DownloadInterceptor] Showing warning UI for: ${fileName} (${combinedAnalysis.riskLevel})`);
+            onDownloadAnalyzed(downloadId, downloadInfo, combinedAnalysis);
 
         } catch (error) {
             console.error('[DownloadInterceptor] Error during analysis:', error);
@@ -279,13 +357,47 @@ export function proceedWithDownload(downloadId: string): boolean {
     console.log('[DownloadInterceptor] User proceeding with download:', downloadId);
 
     try {
-        const savePath = getDefaultDownloadPath(pending.info.fileName);
-        pending.item.setSavePath(savePath);
-        startDownloadWithProgress(downloadId, pending.item, pending.info, savePath);
-        pendingDownloads.delete(downloadId);
-        return true;
+        const finalPath = getDefaultDownloadPath(pending.info.fileName);
+        
+        // If file was downloaded to temp (for VT scanning), move it to final location
+        if (pending.tempPath && fs.existsSync(pending.tempPath)) {
+            console.log('[DownloadInterceptor] Moving from temp to final location...');
+            
+            // Ensure target directory exists
+            const targetDir = path.dirname(finalPath);
+            if (!fs.existsSync(targetDir)) {
+                fs.mkdirSync(targetDir, { recursive: true });
+            }
+            
+            // Move file
+            fs.renameSync(pending.tempPath, finalPath);
+            console.log('[DownloadInterceptor] File moved successfully');
+            
+            // Clean up temp folder
+            try {
+                const tempFolder = path.dirname(pending.tempPath);
+                fs.rmdirSync(tempFolder);
+            } catch (e) {
+                // Ignore cleanup errors
+            }
+            
+            pendingDownloads.delete(downloadId);
+            
+            // Notify completion
+            if (onDownloadComplete) {
+                onDownloadComplete(downloadId, pending.info, finalPath, true);
+            }
+            
+            return true;
+        } else {
+            // Fallback for old flow (no temp download)
+            pending.item.setSavePath(finalPath);
+            startDownloadWithProgress(downloadId, pending.item, pending.info, finalPath);
+            pendingDownloads.delete(downloadId);
+            return true;
+        }
     } catch (error) {
-        console.error('[DownloadInterceptor] Error resuming download:', error);
+        console.error('[DownloadInterceptor] Error proceeding with download:', error);
         return false;
     }
 }
@@ -303,6 +415,20 @@ export function cancelDownload(downloadId: string): boolean {
     console.log('[DownloadInterceptor] User cancelled download:', downloadId);
 
     try {
+        // Delete temp file if it exists
+        if (pending.tempPath && fs.existsSync(pending.tempPath)) {
+            console.log('[DownloadInterceptor] Deleting temp file:', pending.tempPath);
+            fs.unlinkSync(pending.tempPath);
+            
+            // Clean up temp folder
+            try {
+                const tempFolder = path.dirname(pending.tempPath);
+                fs.rmdirSync(tempFolder);
+            } catch (e) {
+                // Ignore cleanup errors
+            }
+        }
+        
         pending.item.cancel();
         pendingDownloads.delete(downloadId);
         return true;
