@@ -31,7 +31,7 @@ export class VirusTotalClient {
         this.apiKey = apiKey || process.env.VIRUSTOTAL_API_KEY || '';
         
         if (!this.apiKey) {
-            console.warn('[VirusTotal] No API key provided, VirusTotal checks will be skipped');
+            console.warn('[VirusTotal] No API key provided. Service will be unavailable.');
         } else {
             this.client = new VirusTotalAPI(this.apiKey);
             console.log('[VirusTotal] Client initialized successfully');
