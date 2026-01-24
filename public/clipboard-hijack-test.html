@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Clipboard Hijack Test</title>
+  <style>
+    body { font-family: system-ui, sans-serif; padding: 24px; background: #0a0a1a; color: #e0e0e0; }
+    button { margin: 8px 0; padding: 10px 16px; border: 0; border-radius: 6px; cursor: pointer; }
+    .danger { background: #ef4444; color: #fff; }
+    .safe { background: #4ade80; color: #000; }
+    .card { background: #1a1a2e; padding: 16px; border-radius: 8px; }
+    code { display: block; background: #111; padding: 8px; border-radius: 6px; margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <h1>Clipboard Hijack Test</h1>
+  <div class="card">
+    <p>Click the buttons below. Crypto clipboard writes should be blocked with a warning toast.</p>
+    <button class="danger" id="copy-btc">Copy BTC address (blocked)</button>
+    <button class="danger" id="copy-eth">Copy ETH address (blocked)</button>
+    <button class="safe" id="copy-safe">Copy safe text (allowed)</button>
+    <div>
+      <label for="exec">ExecCommand copy test (blocked):</label>
+      <input id="exec" value="bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080" />
+      <button class="danger" id="copy-exec">Copy via execCommand</button>
+    </div>
+    <code id="status">Status: waiting...</code>
+  </div>
+  <script>
+    const status = document.getElementById('status');
+    const setStatus = (msg) => (status.textContent = 'Status: ' + msg);
+
+    document.getElementById('copy-btc').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText('bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080'); setStatus('BTC copied (should be blocked)'); }
+      catch (e) { setStatus('BTC blocked'); }
+    });
+
+    document.getElementById('copy-eth').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText('0x52908400098527886E0F7030069857D2E4169EE7'); setStatus('ETH copied (should be blocked)'); }
+      catch (e) { setStatus('ETH blocked'); }
+    });
+
+    document.getElementById('copy-safe').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText('hello-safe-text'); setStatus('Safe text copied'); }
+      catch (e) { setStatus('Safe text failed'); }
+    });
+
+    document.getElementById('copy-exec').addEventListener('click', () => {
+      const input = document.getElementById('exec');
+      input.select();
+      const ok = document.execCommand('copy');
+      setStatus(ok ? 'execCommand copy attempted' : 'execCommand failed');
+    });
+  </script>
+</body>
+</html>

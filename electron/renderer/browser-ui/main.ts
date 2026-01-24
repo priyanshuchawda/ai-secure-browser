@@ -484,6 +484,113 @@ class TabManager {
             }
         });
 
+        webview.addEventListener('dom-ready', () => {
+            const guardScript = `
+                (() => {
+                    const sendBlocked = (text, reason) => {
+                        window.postMessage({ type: 'clipboard-blocked', text, reason }, '*');
+                    };
+
+                    const isCryptoAddress = (text) => {
+                        const trimmed = String(text || '').trim();
+                        if (!trimmed) return false;
+                        const patterns = [
+                            /\\b[13][a-km-zA-HJ-NP-Z1-9]{25,34}\\b/,
+                            /\\bbc1[ac-hj-np-z02-9]{11,71}\\b/i,
+                            /\\b0x[a-fA-F0-9]{40}\\b/,
+                            /\\b[LM3][a-km-zA-HJ-NP-Z1-9]{26,33}\\b/,
+                            /\\bD{1}[5-9A-HJ-NP-U]{1}[1-9A-HJ-NP-Za-km-z]{32}\\b/,
+                            /\\bX[1-9A-HJ-NP-Za-km-z]{33}\\b/,
+                            /\\br[0-9a-zA-Z]{24,34}\\b/
+                        ];
+                        return patterns.some((re) => re.test(trimmed));
+                    };
+
+                    const COPY_GESTURE_WINDOW_MS = 1000;
+                    let lastUserCopyAt = 0;
+
+                    const recordUserCopyShortcut = (event) => {
+                        const key = String(event?.key || '').toLowerCase();
+                        const code = String(event?.code || '');
+                        const isCopyKey = key === 'c' || code === 'KeyC';
+                        if ((event.ctrlKey || event.metaKey) && isCopyKey) {
+                            lastUserCopyAt = Date.now();
+                        }
+                    };
+
+                    document.addEventListener('keydown', recordUserCopyShortcut, true);
+
+                    const hasRecentUserCopy = () => Date.now() - lastUserCopyAt <= COPY_GESTURE_WINDOW_MS;
+
+                    const getBlockReason = (text, requireUserGesture) => {
+                        if (isCryptoAddress(text)) return 'crypto-address';
+                        if (requireUserGesture && !hasRecentUserCopy()) return 'user-gesture-required';
+                        return null;
+                    };
+
+                    const originalWriteText = navigator.clipboard?.writeText?.bind(navigator.clipboard);
+                    const originalWrite = navigator.clipboard?.write?.bind(navigator.clipboard);
+                    if (originalWriteText) {
+                        navigator.clipboard.writeText = async (text) => {
+                            const reason = getBlockReason(text, true);
+                            if (reason) {
+                                sendBlocked(text, reason);
+                                throw new DOMException('Clipboard write blocked', 'NotAllowedError');
+                            }
+                            return originalWriteText(text);
+                        };
+                    }
+                    if (originalWrite) {
+                        navigator.clipboard.write = async (items) => {
+                            const gestureReason = getBlockReason('', true);
+                            if (gestureReason) {
+                                sendBlocked('', gestureReason);
+                                throw new DOMException('Clipboard write blocked', 'NotAllowedError');
+                            }
+                            try {
+                                for (const item of items || []) {
+                                    for (const type of item.types || []) {
+                                        if (type === 'text/plain') {
+                                            const blob = await item.getType(type);
+                                            const text = await blob.text();
+                                            const reason = getBlockReason(text, false);
+                                            if (reason) {
+                                                sendBlocked(text, reason);
+                                                throw new DOMException('Clipboard write blocked', 'NotAllowedError');
+                                            }
+                                        }
+                                    }
+                                }
+                            } catch (error) {
+                                if (error instanceof DOMException) {
+                                    throw error;
+                                }
+                            }
+                            return originalWrite(items);
+                        };
+                    }
+
+                    const originalExec = document.execCommand?.bind(document);
+                    if (originalExec) {
+                        document.execCommand = (commandId, showUI, value) => {
+                            if (String(commandId).toLowerCase() === 'copy') {
+                                const selectedText = window.getSelection()?.toString() || '';
+                                const reason = getBlockReason(selectedText, true);
+                                if (reason) {
+                                    sendBlocked(selectedText, reason);
+                                    return false;
+                                }
+                            }
+                            return originalExec(commandId, showUI, value);
+                        };
+                    }
+                })();
+            `;
+            webview.executeJavaScript(guardScript).catch((error) => {
+                console.warn('[UI] Clipboard guard injection failed:', error);
+            });
+        });
+
         // Loading failed
         webview.addEventListener('did-fail-load', (event: any) => {
             if (event.errorCode && event.errorCode !== -3) {
@@ -1305,5 +1412,21 @@ if (window.electronAPI && window.electronAPI.onOpenUrlInNewTab) {
     });
     console.log('[UI] New tab URL listener registered');
 }
+
+window.addEventListener('message', (event) => {
+    if (event?.data?.type === 'clipboard-blocked') {
+        const text = String(event.data.text || '');
+        const reason = String(event.data.reason || '');
+        let message = 'Blocked suspicious clipboard change';
+        if (reason === 'user-gesture-required') {
+            message = 'Clipboard copy blocked. Use Ctrl/Cmd+C to copy.';
+        } else if (text) {
+            const display = text.length > 10 ? `${text.slice(0, 6)}...${text.slice(-4)}` : text;
+            message = `Blocked suspicious clipboard change (${display})`;
+        }
+        showDownloadNotification('Clipboard Blocked', message, 'error');
+        console.warn('[UI] Clipboard write blocked:', event.data.reason, text);
+    }
+});
 
 console.log('[UI] Browser UI initialized');
