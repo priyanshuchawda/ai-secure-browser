@@ -13,7 +13,12 @@
     "test:watch": "vitest --watch",
     "test:e2e": "playwright test",
     "lint": "eslint . --ext .ts,.tsx",
-    "check-setup": "node -e \"console.log('Setup OK: Node', process.version)\""
+    "check-setup": "node -e \"console.log('Setup OK: Node', process.version)\"",
+    "dist": "npm run build && electron-builder",
+    "release": "node scripts/release.js",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:linux": "npm run build && electron-builder --linux"
   },
   "keywords": [
     "electron",
@@ -31,6 +36,7 @@
     "@typescript-eslint/eslint-plugin": "^6.19.0",
     "@typescript-eslint/parser": "^6.19.0",
     "electron": "^28.1.0",
+    "electron-builder": "^26.4.0",
     "esbuild": "^0.27.2",
     "eslint": "^8.56.0",
     "tsx": "^4.21.0",
@@ -42,6 +48,48 @@
   },
   "dependencies": {
     "@google/genai": "^1.34.0",
-    "dotenv": "^17.2.3"
+    "dotenv": "^17.2.3",
+    "virustotal-api": "^1.1.7"
+  },
+  "build": {
+    "appId": "com.aisecurebrowser.app",
+    "productName": "AI Secure Browser",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "build/icon.icns",
+      "category": "public.app-category.utilities"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "build/icon.png",
+      "category": "Network"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
   }
 }

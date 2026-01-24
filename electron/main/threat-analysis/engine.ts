@@ -1,6 +1,6 @@
 /**
  * Threat Analysis Engine
- * Orchestrates the threat detection pipeline: Cache → Local Rules → AI
+ * Orchestrates the threat detection pipeline: Cache → Local Rules → VirusTotal + AI (parallel)
  * Based on research.md Decision 4
  */
 
@@ -17,6 +17,7 @@ import { getCacheManager } from './cache/cache-manager';
 import { getPhishingDetector, LocalDetectionResult } from './local-rules/phishing-detector';
 import { getGeminiAnalyzer } from './ai-analyzer/gemini-client';
 import { getUrlContentAnalyzer, UrlContentAnalysis } from './ai-analyzer/url-analyzer';
+import { getCombinedAnalyzer } from '../virustotal/combined-analyzer';
 
 /**
  * Threat Analysis Engine
@@ -27,10 +28,11 @@ export class ThreatAnalysisEngine {
     private phishingDetector = getPhishingDetector();
     private geminiAnalyzer = getGeminiAnalyzer();
     private urlAnalyzer = getUrlContentAnalyzer();
+    private combinedAnalyzer = getCombinedAnalyzer();
 
     /**
      * Analyze a URL for threats
-     * Pipeline: Cache → Local Rules → AI (if needed)
+     * Pipeline: Cache → Local Rules → VirusTotal + AI (parallel)
      */
     async analyze(request: AnalysisRequest): Promise<ThreatAssessment> {
         const startTime = Date.now();
@@ -67,61 +69,88 @@ export class ThreatAnalysisEngine {
             console.log(`[Engine] Local high-confidence detection (${localResult.confidence}), proceeding to AI for summary...`);
         }
 
-        // ===== Stage 3: AI Analysis (ALWAYS for all URLs) =====
-        // We ALWAYS call AI to verify every URL, not just suspicious ones.
-        // This ensures unknown domains get proper verification via:
-        // 1. Web Search for domain reputation
-        // 2. URL fetch for actual content analysis
+        // ===== Stage 3: VirusTotal + AI Analysis (PARALLEL) =====
+        // Run both VirusTotal and Gemini AI in parallel for fastest results
+        // VirusTotal checks known malware database (0.5s)
+        // Gemini analyzes content and context (10-15s)
         const shouldCallAI = (
             !request.options?.offlineMode &&
             this.geminiAnalyzer.isAvailable()
         );
 
         let aiCalledButFailed = false;  // Track if AI was called but returned no result
+        
+        // Start both checks in parallel
+        const vtPromise = this.analyzeWithVirusTotal(request.url)
+            .catch(error => {
+                console.warn('[Engine] VirusTotal check failed:', error.message);
+                return null;
+            });
 
-        if (shouldCallAI) {
-            const aiResult = await this.analyzeWithAI(request);
-            if (aiResult) {
-                // ===== Stage 4: Deep Content Analysis (for medium confidence) =====
-                // If AI is uncertain, fetch & analyze page content for better accuracy
-                if (
-                    GEMINI.URL_CONTEXT_ENABLED &&
-                    this.urlAnalyzer.isAvailable() &&
-                    aiResult.confidence >= GEMINI.DEEP_ANALYSIS_THRESHOLD &&
-                    aiResult.confidence < THRESHOLDS.AUTO_BLOCK_CONFIDENCE &&
-                    !request.options?.offlineMode
-                ) {
-                    console.log('[Engine] Medium confidence, triggering deep content analysis...');
-                    const contentResult = await this.analyzeWithContent(request);
-                    if (contentResult) {
-                        const assessment = this.createAssessmentFromContent(
-                            requestId,
-                            request.url,
-                            contentResult,
-                            localResult,
-                            startTime
-                        );
-                        this.cacheManager.store(request.url, assessment);
-                        console.log(`[Engine] Deep analysis complete, latency: ${assessment.analysisLatency}ms`);
-                        return assessment;
-                    }
-                }
-
-                const assessment = this.createAssessmentFromAI(
-                    requestId,
-                    request.url,
-                    aiResult,
-                    localResult,
-                    startTime
-                );
-                this.cacheManager.store(request.url, assessment);
-                console.log(`[Engine] AI analysis complete, latency: ${assessment.analysisLatency}ms`);
-                return assessment;
-            } else {
-                // AI was called but failed (rate limit, network error, etc.)
+        const aiPromise = shouldCallAI
+            ? this.analyzeWithAI(request).catch(error => {
+                console.warn('[Engine] AI analysis failed:', error);
                 aiCalledButFailed = true;
-                console.log('[Engine] AI analysis failed, falling back to local rules');
+                return null;
+              })
+            : Promise.resolve(null);
+
+        // Wait for both checks to complete
+        const [vtResult, aiResult] = await Promise.all([vtPromise, aiPromise]);
+
+        console.log(`[Engine] Analysis complete - VT: ${vtResult ? 'available' : 'unavailable'}, AI: ${aiResult ? 'available' : 'unavailable'}`);
+
+        // ===== Stage 4: Combine Results =====
+        if (aiResult) {
+            // Get Gemini confidence for combined analysis with VT
+            const geminiConfidence = aiResult.confidence || 0;
+            const geminiThreatType = aiResult.threatType !== 'safe' ? (aiResult.threatType as ThreatType) : null;
+
+            // Create combined VT + Gemini analysis
+            let combinedVtResult = vtResult;
+            if (vtResult && vtResult.virusTotal.available && vtResult.virusTotal.inDatabase) {
+                // Re-analyze with Gemini confidence included
+                combinedVtResult = await this.combinedAnalyzer.analyzeUrl(request.url, geminiConfidence, geminiThreatType);
             }
+
+            // ===== Stage 4a: Deep Content Analysis (for medium confidence) =====
+            // If AI is uncertain, fetch & analyze page content for better accuracy
+            if (
+                GEMINI.URL_CONTEXT_ENABLED &&
+                this.urlAnalyzer.isAvailable() &&
+                aiResult.confidence >= GEMINI.DEEP_ANALYSIS_THRESHOLD &&
+                aiResult.confidence < THRESHOLDS.AUTO_BLOCK_CONFIDENCE &&
+                !request.options?.offlineMode
+            ) {
+                console.log('[Engine] Medium confidence, triggering deep content analysis...');
+                const contentResult = await this.analyzeWithContent(request);
+                if (contentResult) {
+                    const assessment = this.createAssessmentFromContent(
+                        requestId,
+                        request.url,
+                        contentResult,
+                        localResult,
+                        startTime,
+                        combinedVtResult
+                    );
+                    this.cacheManager.store(request.url, assessment);
+                    console.log(`[Engine] Deep analysis complete, latency: ${assessment.analysisLatency}ms`);
+                    return assessment;
+                }
+            }
+
+            // Create combined assessment from VirusTotal + AI
+            const assessment = this.createCombinedAssessment(
+                requestId,
+                request.url,
+                aiResult,
+                localResult,
+                combinedVtResult,
+                startTime
+            );
+            this.cacheManager.store(request.url, assessment);
+            console.log(`[Engine] Combined analysis complete, latency: ${assessment.analysisLatency}ms`);
+            return assessment;
         }
 
         // ===== Default: Safe or Local Result =====
@@ -182,6 +211,21 @@ export class ThreatAnalysisEngine {
     }
 
     /**
+     * Check URL with VirusTotal
+     */
+    private async analyzeWithVirusTotal(url: string) {
+        try {
+            console.log('[Engine] Starting VirusTotal check...');
+            const result = await this.combinedAnalyzer.analyzeUrl(url, 0, null);
+            console.log(`[Engine] VirusTotal check complete: ${result.virusTotal.positives}/${result.virusTotal.total} detections`);
+            return result;
+        } catch (error) {
+            console.warn('[Engine] VirusTotal analysis failed:', error);
+            return null;
+        }
+    }
+
+    /**
      * Create assessment from local detection result
      */
     private createAssessmentFromLocal(
@@ -202,6 +246,68 @@ export class ThreatAnalysisEngine {
             analysisLatency: Date.now() - startTime,
             timestamp: getCurrentTimestamp()
         };
+    }
+
+    /**
+     * Create combined assessment from VirusTotal + AI results
+     * Uses intelligent decision logic to combine both sources
+     */
+    private createCombinedAssessment(
+        requestId: string,
+        url: string,
+        aiResult: NonNullable<Awaited<ReturnType<typeof this.geminiAnalyzer.analyze>>>,
+        localResult: LocalDetectionResult,
+        vtResult: Awaited<ReturnType<typeof this.combinedAnalyzer.analyzeUrl>> | null,
+        startTime: number
+    ): ThreatAssessment {
+        // Map AI indicators
+        const aiIndicators: ThreatIndicator[] = aiResult.indicators.map((i: { type: string; description: string; severity: string }) => ({
+            type: i.type as any,
+            description: i.description,
+            severity: i.severity as any,
+            details: {}
+        }));
+
+        // If we have VirusTotal results, use combined analysis
+        if (vtResult && vtResult.virusTotal.available && vtResult.virusTotal.inDatabase) {
+            console.log(`[Engine] Using combined VT + AI analysis`);
+            console.log(`[Engine] VT: ${vtResult.virusTotal.positives}/${vtResult.virusTotal.total}, AI confidence: ${aiResult.confidence}`);
+            console.log(`[Engine] Combined recommendation: ${vtResult.recommendation}, threat level: ${vtResult.threatLevel}`);
+
+            // Combine all indicators
+            const allIndicators = [
+                ...vtResult.indicators,
+                ...aiIndicators
+            ];
+
+            // Determine final threat type based on combined analysis
+            let finalThreatType: ThreatType | null = null;
+            if (vtResult.recommendation === 'block') {
+                // Use AI's threat type if available, otherwise use malware
+                finalThreatType = aiResult.threatType !== 'safe' ? 
+                    (aiResult.threatType as ThreatType) : ThreatType.MALWARE;
+            } else if (aiResult.threatType !== 'safe') {
+                finalThreatType = aiResult.threatType as ThreatType;
+            }
+
+            return {
+                id: generateUUID(),
+                requestId,
+                url,
+                threatType: finalThreatType,
+                confidence: vtResult.combinedConfidence,
+                indicators: allIndicators,
+                analysisMethod: AnalysisMethod.AI_ANALYSIS,
+                aiModelUsed: 'gemini-2.5-flash + virustotal',
+                analysisLatency: Date.now() - startTime,
+                timestamp: getCurrentTimestamp(),
+                virusTotalResult: vtResult.virusTotal
+            };
+        }
+
+        // No VirusTotal data - fall back to AI-only assessment
+        console.log('[Engine] VirusTotal unavailable, using AI-only assessment');
+        return this.createAssessmentFromAI(requestId, url, aiResult, localResult, startTime);
     }
 
     /**
@@ -341,7 +447,8 @@ export class ThreatAnalysisEngine {
         url: string,
         contentResult: UrlContentAnalysis,
         localResult: LocalDetectionResult,
-        startTime: number
+        startTime: number,
+        vtResult?: Awaited<ReturnType<typeof this.combinedAnalyzer.analyzeUrl>> | null
     ): ThreatAssessment {
         // Merge local and content-based indicators
         const contentIndicators: ThreatIndicator[] = contentResult.indicators.map((i: { type: string; description: string; severity: string }) => ({
@@ -394,7 +501,8 @@ export class ThreatAnalysisEngine {
             analysisMethod: AnalysisMethod.AI_ANALYSIS,
             aiModelUsed: 'gemini-2.5-flash (url-context)',
             analysisLatency: Date.now() - startTime,
-            timestamp: getCurrentTimestamp()
+            timestamp: getCurrentTimestamp(),
+            virusTotalResult: vtResult?.virusTotal
         };
     }
 

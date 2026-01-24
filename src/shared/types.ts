@@ -45,6 +45,7 @@ export interface ThreatAssessment {
     aiModelUsed: string | null;        // e.g., "gemini-2.5-flash"
     analysisLatency: number;           // Milliseconds to complete
     timestamp: string;                 // ISO8601
+    virusTotalResult?: VirusTotalResult; // NEW: VirusTotal scan data
 }
 
 export enum ThreatType {
@@ -342,4 +343,32 @@ export interface GeminiThreatAnalysis {
         groundingChunks?: any[];
         groundingSupports?: any[];
     };
+}
+
+// ============================================
+// VirusTotal Types
+// ============================================
+
+export interface VirusTotalResult {
+    available: boolean;              // Is VirusTotal check completed?
+    inDatabase: boolean;             // Was URL/file found in VT database?
+    submitted?: boolean;             // Was item submitted for scanning?
+    detectionRate: number;           // Percentage (0-100)
+    positives: number;               // Number of scanners that detected threat
+    total: number;                   // Total number of scanners
+    scanDate: string | null;         // Last scan date (ISO8601)
+    permalink: string | null;        // Link to VT report
+    scans?: Record<string, any>;     // Individual scanner results
+    sha256?: string;                 // File hash (for file scans)
+    message: string;                 // Human-readable summary
+}
+
+export interface VirusTotalUrlReport extends VirusTotalResult {
+    url: string;
+}
+
+export interface VirusTotalFileReport extends VirusTotalResult {
+    sha256: string;
+    md5?: string;
+    filename?: string;
 }

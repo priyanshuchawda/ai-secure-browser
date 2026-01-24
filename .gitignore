@@ -10,10 +10,13 @@ data/threat-cache/
 data/logs/
 data/feedback/
 
-# Environment files
+# Environment files (SENSITIVE - DO NOT COMMIT)
 .env
 .env.local
 .env.*.local
+
+# API Keys and Secrets (IMPORTANT!)
+virustool.md
 
 # IDE
 .idea/
