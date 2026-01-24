@@ -1,6 +1,6 @@
 {
   "name": "ai-secure-browser",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "AI-driven cybersecurity browser with proactive threat protection",
   "main": "dist-electron/main/index.js",
   "type": "module",
