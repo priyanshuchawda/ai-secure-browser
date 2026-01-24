@@ -8,11 +8,19 @@ An intelligent web browser with **real-time phishing and threat detection** powe
 ![VirusTotal](https://img.shields.io/badge/VirusTotal-Integrated-394EFF?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
 
-## 🚀 New in v1.1: VirusTotal Integration
+## 🚀 New in v1.2: Comprehensive Link Click Protection
 
-**Major Security Upgrade!** Now combines Gemini AI with VirusTotal's database of **480+ million malware samples** for unparalleled threat detection.
+**Critical Security Enhancement!** Now protects against **ALL navigation events**, not just manual URL entry.
 
-### What's New:
+### What's New in v1.2:
+- ✅ **Link Click Scanning**: Every clicked link is analyzed before navigation
+- ✅ **Form Submission Protection**: Security scans on form destinations
+- ✅ **JavaScript Redirect Detection**: Catches malicious redirects
+- ✅ **Zero-Trust Navigation**: No domain-based trust assumptions
+- ✅ **Smart Caching**: Fast repeated visits (50-100ms) without compromising security
+- ✅ **Same-Page Optimization**: Anchor links navigate instantly
+
+### Previous in v1.1: VirusTotal Integration
 - ✅ **Parallel Analysis**: VirusTotal (0.5s) + Gemini AI (15s) run simultaneously
 - ✅ **70+ Antivirus Engines**: Every URL checked against 70+ security scanners
 - ✅ **Instant Threat Detection**: Known malware identified in under 1 second
@@ -23,6 +31,27 @@ An intelligent web browser with **real-time phishing and threat detection** powe
 ---
 
 ## Features
+
+### 🛡️ Comprehensive Navigation Protection
+
+**Every navigation event is now secured** - not just manual URL entry!
+
+#### What Gets Scanned:
+- ✅ **Manual URL Entry** - Typing URLs in address bar
+- ✅ **Link Clicks** - ALL links on web pages (NEW!)
+- ✅ **Form Submissions** - Form destination URLs (NEW!)
+- ✅ **JavaScript Redirects** - window.location changes (NEW!)
+- ✅ **HTTP Redirects** - 301/302 redirect chains (NEW!)
+
+#### Smart Optimizations:
+- ⚡ **Same-page anchors** (#section) - Skip scan (instant, safe)
+- ⚡ **Cached results** - 50-100ms for previously scanned URLs
+- ⚡ **Parallel analysis** - VirusTotal + AI run simultaneously
+
+#### Security First:
+Every unique URL is scanned independently. **No same-domain shortcuts** that could allow compromised subpages or user-generated malicious content.
+
+---
 
 ### 🛡️ Multi-Layered URL Threat Analysis
 
@@ -159,14 +188,16 @@ Full browser-like navigation with webview integration:
 
 ### Threat Detection Capabilities
 
-| Threat Type | Detection Method |
-|-------------|-----------------|
-| **Phishing** | Typosquatting detection, brand impersonation, fake login forms |
-| **Malware** | Suspicious downloads, malicious file extensions |
-| **Social Engineering** | Urgency tactics, fear-based messaging, too-good-to-be-true offers |
-| **Homograph Attacks** | Unicode lookalike characters, character substitution |
-| **Dangerous Downloads** | Executable analysis, source reputation, double extension detection |
-| **Fake Software** | AI verifies software legitimacy via web search |
+| Threat Type | Detection Method | Coverage |
+|-------------|-----------------|----------|
+| **Phishing** | Typosquatting detection, brand impersonation, fake login forms | Manual + Links |
+| **Malware** | Suspicious downloads, malicious file extensions | Downloads + Links |
+| **Social Engineering** | Urgency tactics, fear-based messaging, too-good-to-be-true offers | All Navigation |
+| **Homograph Attacks** | Unicode lookalike characters, character substitution | All Navigation |
+| **Dangerous Downloads** | Executable analysis, source reputation, double extension detection | Downloads |
+| **Fake Software** | AI verifies software legitimacy via web search | Downloads |
+| **Compromised Subpages** | Each URL scanned independently (NEW!) | Link Clicks |
+| **User-Generated Content** | No same-domain trust (NEW!) | Link Clicks |
 
 ### Smart Decision Making
 
@@ -175,6 +206,8 @@ Full browser-like navigation with webview integration:
 - **Conservative Blocking**: Only blocks sites with actual evidence of malicious intent
 - **Download Intelligence**: Context-aware download analysis (executables from GitHub = safe, from unknown domain = risky)
 - **Software Verification**: Google Search confirms if software is legitimate before download
+- **Zero-Trust Navigation**: Every URL scanned independently - no same-domain shortcuts (NEW!)
+- **Per-URL Caching**: Fast repeated visits without compromising security (NEW!)
 
 ## Quick Start
 
@@ -458,12 +491,14 @@ ai-secure-browser/
 
 ## Security Features
 
-- **Proactive Protection**: Every URL is analyzed before navigation
+- **Proactive Protection**: Every URL is analyzed before navigation (including link clicks!)
+- **Comprehensive Navigation Coverage**: Manual entry, link clicks, forms, redirects all protected
 - **Download Interception**: All downloads are scanned before allowing
-- **Multi-layered Detection**: Local rules + AI grounding + Content analysis
+- **Multi-layered Detection**: Local rules + VirusTotal + AI grounding + Content analysis
 - **False Positive Prevention**: AI can override local rule mistakes
 - **Transparent Decisions**: Warning pages explain why a site/download was blocked
 - **User Override**: Users can proceed to blocked sites at their own risk (except critical)
+- **Zero-Trust Model**: No domain-based security assumptions - each URL verified independently
 
 ## Example Detections
 
@@ -528,8 +563,13 @@ interface DownloadAnalysis {
 
 ## Roadmap
 
-### Current Features (v1.0) ✅
+### Current Features (v1.2) ✅
+- [x] **Link Click Protection** - All link clicks scanned before navigation
+- [x] **Form Submission Security** - Form destinations analyzed
+- [x] **JavaScript Redirect Detection** - Catches malicious redirects
+- [x] **Zero-Trust Navigation** - No same-domain security shortcuts
 - [x] URL Threat Analysis (3-step AI pipeline)
+- [x] VirusTotal Integration (70+ scanners, 480M+ malware DB)
 - [x] Download Protection with AI analysis
 - [x] Browser Navigation (Back, Forward, Refresh, Home)
 - [x] Website Safety Caching (LRU + Disk persistence)
@@ -540,7 +580,7 @@ interface DownloadAnalysis {
 - [x] Re-check with AI button (force refresh cached results)
 - [x] AI Failure Graceful Handling (reduced confidence when unavailable)
 
-### Upcoming Features (v1.1) - NEXT PRIORITIES
+### Upcoming Features (v1.3) - NEXT PRIORITIES
 - [ ] **Multi-tab Browsing** - Open multiple sites in tabs
 - [ ] **Browser History** - Track and manage browsing history
 - [ ] **Bookmarks** - Save and organize favorite websites

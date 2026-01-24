@@ -297,24 +297,36 @@ class TabManager {
     }
 
     /**
-     * Navigate active tab to URL
+     * Navigate active tab to URL (from address bar)
      */
     async navigateActiveTab(url: string): Promise<void> {
         if (!this.activeTabId) return;
+        await this.analyzeAndNavigate(this.activeTabId, url, 'address-bar');
+    }
 
-        const tab = this.tabs.get(this.activeTabId);
+    /**
+     * Analyze URL and navigate if safe (shared logic for address bar and link clicks)
+     */
+    async analyzeAndNavigate(tabId: string, url: string, source: 'address-bar' | 'link-click'): Promise<void> {
+        const tab = this.tabs.get(tabId);
         if (!tab) return;
 
         // Update tab state
         tab.url = url;
         tab.isLoading = true;
-        tab.title = 'Loading...';
+        tab.title = source === 'link-click' ? 'Scanning link...' : 'Loading...';
         tab.securityStatus = 'unknown';
         this.updateTabUI(tab.id);
 
         // Show scan panel
         showScanPanel(true);
         updateScanStatus('analyzing', url);
+
+        // Update scan title to indicate source
+        const scanTitleEl = document.getElementById('scan-title') as HTMLHeadingElement;
+        if (source === 'link-click') {
+            scanTitleEl.textContent = 'Scanning Link...';
+        }
 
         try {
             // Run threat analysis
@@ -394,6 +406,29 @@ class TabManager {
      */
     private setupWebviewListeners(tab: Tab): void {
         const webview = tab.webviewElement;
+
+        // Intercept link clicks and form submissions BEFORE navigation
+        webview.addEventListener('will-navigate', async (event: any) => {
+            const targetUrl = event.url;
+            const currentUrl = tab.url;
+
+            console.log('[TabManager] will-navigate event:', targetUrl, 'from:', currentUrl);
+
+            // Only skip scanning for same-page anchor links (#section)
+            // SECURITY: Do NOT skip same-domain - each page must be scanned
+            // (compromised pages, user content, different paths can be malicious)
+            if (currentUrl && targetUrl.startsWith(currentUrl.split('#')[0] + '#')) {
+                console.log('[TabManager] Same-page anchor - skipping scan');
+                return;
+            }
+
+            // Prevent the navigation until we analyze
+            event.preventDefault();
+            
+            // Run security analysis for ALL link clicks (including same-domain)
+            // Cache will handle fast repeated visits to same URL
+            await this.analyzeAndNavigate(tab.id, targetUrl, 'link-click');
+        });
 
         // Page title updated
         webview.addEventListener('page-title-updated', (event: any) => {
