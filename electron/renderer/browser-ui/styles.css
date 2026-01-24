@@ -776,6 +776,11 @@ body::before {
   z-index: 1000;
   backdrop-filter: blur(8px);
   animation: fadeIn 0.2s ease;
+  pointer-events: auto;
+}
+
+.download-panel[style*="display: none"] {
+  pointer-events: none;
 }
 
 @keyframes fadeIn {

@@ -21,12 +21,29 @@ import {
     type DownloadAnalysis
 } from './download-protection';
 
+// Disable security warnings in development only
+if (!app.isPackaged) {
+    process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
+}
+
 // ES module dirname equivalent
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Keep a global reference to prevent garbage collection
 let mainWindow: BrowserWindow | null = null;
+
+// Safety guidelines cache (domain:threatType -> guidelines)
+const guidelinesCache = new Map<string, { 
+    guidelines: any; 
+    threatType: string; 
+    timestamp: number;
+}>();
+const GUIDELINES_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
+// Session acknowledgment tracking - domains user has already seen warnings for
+const sessionAcknowledgments = new Set<string>(); // domain names
+
 
 // Vite dev server URL (during development)
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
@@ -345,11 +362,125 @@ function setupIpcHandlers(): void {
         }
     });
 
-    // Handle user override
+    // Handle user override with safety guidelines
     ipcMain.handle(IPC_CHANNELS.USER_OVERRIDE, async (_event, { requestId, reason }) => {
         console.log('[IPC] User override:', { requestId, reason });
         // TODO: Log override and proceed with navigation
         return { success: true };
+    });
+
+    // Handle request for safety guidelines (proceed with caution)
+    ipcMain.handle('security:getSafetyGuidelines', async (_event, { url, assessment }) => {
+        console.log('[IPC] Safety guidelines requested for:', url);
+        
+        try {
+            // Create cache key from domain and threat type
+            const domain = new URL(url).hostname;
+            const cacheKey = `${domain}:${assessment.threatType}`;
+            
+            // DEBUG: Log cache state
+            console.log('[IPC] Cache key:', cacheKey);
+            console.log('[IPC] Cache size:', guidelinesCache.size);
+            console.log('[IPC] Cache has key?', guidelinesCache.has(cacheKey));
+            
+            // Check cache first
+            const cached = guidelinesCache.get(cacheKey);
+            if (cached && (Date.now() - cached.timestamp) < GUIDELINES_CACHE_TTL) {
+                console.log('[IPC] ⚡ Using cached guidelines for:', cacheKey);
+                return {
+                    success: true,
+                    guidelines: cached.guidelines,
+                    fromCache: true
+                };
+            }
+            
+            // DEBUG: Why cache miss?
+            if (cached) {
+                console.log('[IPC] Cache expired. Age:', (Date.now() - cached.timestamp) / 1000, 'seconds');
+            } else {
+                console.log('[IPC] Cache miss. Generating new guidelines...');
+            }
+
+            const { getSafetyGuidelinesGenerator } = await import('./threat-analysis/safety-guidelines-generator');
+            const guidelinesGen = getSafetyGuidelinesGenerator();
+            
+            if (!guidelinesGen.isAvailable()) {
+                console.log('[IPC] AI not available, using fallback guidelines');
+                return {
+                    success: true,
+                    guidelines: {
+                        summary: `This site shows signs of ${assessment.threatType}`,
+                        doNots: [
+                            'DO NOT enter passwords or personal information',
+                            'DO NOT download any files',
+                            'DO NOT click on suspicious links or popups',
+                            'DO NOT enter credit card or payment information',
+                            'DO NOT trust urgent or threatening messages'
+                        ],
+                        warnings: [
+                            'Watch for unexpected popups or redirects',
+                            'Be suspicious of requests for sensitive data',
+                            'Look out for poor grammar or spelling'
+                        ],
+                        technicalAdvice: [
+                            'Keep this window isolated - don\'t open other tabs',
+                            'Clear cache and cookies after visiting',
+                            'Do not log into any accounts on this site'
+                        ],
+                        riskLevel: assessment.confidence >= 0.9 ? 'extreme' : 
+                                  assessment.confidence >= 0.7 ? 'high' : 'medium'
+                    },
+                    fromCache: false
+                };
+            }
+
+            const guidelines = await guidelinesGen.generateGuidelines(assessment, url);
+            
+            // Cache the generated guidelines
+            guidelinesCache.set(cacheKey, {
+                guidelines,
+                threatType: assessment.threatType,
+                timestamp: Date.now()
+            });
+            console.log('[IPC] ✓ Guidelines cached for:', cacheKey);
+            
+            return {
+                success: true,
+                guidelines,
+                fromCache: false
+            };
+        } catch (error) {
+            console.error('[IPC] Safety guidelines error:', error);
+            return {
+                success: false,
+                error: String(error)
+            };
+        }
+    });
+
+    // Handle session acknowledgment tracking
+    ipcMain.handle('security:checkDomainAcknowledged', async (_event, { url }) => {
+        try {
+            const domain = new URL(url).hostname;
+            const isAcknowledged = sessionAcknowledgments.has(domain);
+            console.log('[IPC] Check acknowledgment for:', domain, '→', isAcknowledged);
+            return { acknowledged: isAcknowledged };
+        } catch (error) {
+            console.error('[IPC] Check acknowledgment error:', error);
+            return { acknowledged: false };
+        }
+    });
+
+    ipcMain.handle('security:markDomainAcknowledged', async (_event, { url }) => {
+        try {
+            const domain = new URL(url).hostname;
+            sessionAcknowledgments.add(domain);
+            console.log('[IPC] ✓ Domain acknowledged:', domain, '(Total:', sessionAcknowledgments.size, ')');
+            return { success: true };
+        } catch (error) {
+            console.error('[IPC] Mark acknowledgment error:', error);
+            return { success: false };
+        }
     });
 
     // Handle false positive reports
@@ -367,6 +498,10 @@ function setupIpcHandlers(): void {
             // Clear cache for this URL first
             const cacheManager = getCacheManager();
             const domain = new URL(url).hostname;
+            
+            // Clear session acknowledgment so warnings show again
+            sessionAcknowledgments.delete(domain);
+            console.log('[IPC] Cleared acknowledgment for:', domain);
 
             // Force a fresh analysis by passing skipCache flag
             const assessment = await threatEngine.analyze({

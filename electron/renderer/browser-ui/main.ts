@@ -12,6 +12,9 @@ declare global {
         electronAPI: {
             analyzeUrl: (url: string) => Promise<unknown>;
             forceRefresh: (url: string) => Promise<unknown>;  // Force re-analyze bypassing cache
+            getSafetyGuidelines: (url: string, assessment: any) => Promise<unknown>;  // Get AI safety guidelines
+            checkDomainAcknowledged: (url: string) => Promise<{ acknowledged: boolean }>;  // Check if domain acknowledged
+            markDomainAcknowledged: (url: string) => Promise<{ success: boolean }>;  // Mark domain as acknowledged
             submitOverride: (requestId: string, reason: string) => Promise<void>;
             reportFalsePositive: (data: { url: string; threatType: string; justification: string }) => Promise<void>;
             navigate: (url: string) => void;
@@ -133,6 +136,7 @@ class TabManager {
         webview.id = `webview-${tabId}`;
         webview.src = url || 'about:blank';
         webview.setAttribute('partition', 'persist:main');
+        webview.setAttribute('allowpopups', '');
         webview.style.display = 'none';
 
         // Create tab data
@@ -318,18 +322,8 @@ class TabManager {
         tab.securityStatus = 'unknown';
         this.updateTabUI(tab.id);
 
-        // Show scan panel
-        showScanPanel(true);
-        updateScanStatus('analyzing', url);
-
-        // Update scan title to indicate source
-        const scanTitleEl = document.getElementById('scan-title') as HTMLHeadingElement;
-        if (source === 'link-click') {
-            scanTitleEl.textContent = 'Scanning Link...';
-        }
-
         try {
-            // Run threat analysis
+            // Run threat analysis first (fast from cache)
             const result = await window.electronAPI.analyzeUrl(url) as any;
 
             if (result.success && result.assessment && result.decision) {
@@ -342,13 +336,39 @@ class TabManager {
                     tab.securityStatus = 'danger';
                 }
 
-                displayScanResults(result.assessment, result.decision, url, tab);
+                // Check if domain is acknowledged (for blocked/warned sites)
+                const isBlocked = result.decision.action === 'block';
+                const isWarning = result.decision.action === 'warn';
+                
+                if (isBlocked || isWarning) {
+                    const ackResult = await window.electronAPI.checkDomainAcknowledged(url) as { acknowledged: boolean };
+                    if (ackResult.acknowledged) {
+                        console.log('[TabManager] Domain already acknowledged, loading directly');
+                        // Skip warning UI, load directly
+                        this.loadUrlInTab(tab.id, url);
+                        return;
+                    }
+                }
+
+                // Show scan panel only if we need to show results
+                showScanPanel(true);
+                updateScanStatus('analyzing', url);
+
+                // Update scan title to indicate source
+                const scanTitleEl = document.getElementById('scan-title') as HTMLHeadingElement;
+                if (source === 'link-click') {
+                    scanTitleEl.textContent = 'Scanning Link...';
+                }
+
+                await displayScanResults(result.assessment, result.decision, url, tab);
             } else {
+                showScanPanel(true);
                 updateScanStatus('error', url);
                 setTimeout(() => this.loadUrlInTab(tab.id, url), 1000);
             }
         } catch (error) {
             console.error('[TabManager] Navigation error:', error);
+            showScanPanel(true);
             updateScanStatus('error', url);
         }
     }
@@ -490,8 +510,9 @@ class TabManager {
             const url = event.url;
             console.log('[TabManager] New window requested:', url);
 
-            // Create a new tab with the URL
-            this.createTab(url, true);
+            // Create a new tab and run security analysis before navigating
+            const newTab = this.createTab(null, true);
+            void this.analyzeAndNavigate(newTab.id, url, 'link-click');
 
             // Prevent the default behavior (which would try to open a new electron window)
             event.preventDefault();
@@ -610,6 +631,12 @@ function showScanPanel(show: boolean): void {
     // Hide webview when showing scan panel
     webviewContainer.style.display = 'none';
     browserContent.classList.remove('webview-active');
+    proceedBtn.disabled = false;
+    proceedBtn.style.display = 'none';
+    const existingRecheck = document.getElementById('recheck-btn');
+    if (existingRecheck) {
+        existingRecheck.remove();
+    }
 
     if (show) {
         welcomePanel.style.display = 'none';
@@ -679,10 +706,15 @@ function updateScanStatus(status: 'analyzing' | 'error', url: string): void {
 /**
  * Display final scan results
  */
-function displayScanResults(assessment: any, decision: any, url: string, tab: Tab): void {
+async function displayScanResults(assessment: any, decision: any, url: string, tab: Tab): Promise<void> {
     const isSafe = decision.action === 'allow';
     const isWarning = decision.action === 'warn';
     const isBlock = decision.action === 'block';
+    const existingRecheck = document.getElementById('recheck-btn');
+    if (existingRecheck) {
+        existingRecheck.remove();
+    }
+    proceedBtn.disabled = false;
 
     // Check if result is from cache or local rules (not fresh AI analysis)
     const isFromCache = assessment.fromCache === true;
@@ -714,13 +746,32 @@ function displayScanResults(assessment: any, decision: any, url: string, tab: Ta
         proceedBtn.style.display = 'block';
         proceedBtn.textContent = 'Proceed Anyway (Risk)';
         proceedBtn.className = 'btn-primary btn-warning';
-        proceedBtn.onclick = () => loadUrlInWebview(url);
+        proceedBtn.onclick = () => {
+            // Mark domain as acknowledged for warning-level threats
+            window.electronAPI.markDomainAcknowledged(url).then(() => {
+                console.log('[UI] Domain marked as acknowledged (warning)');
+            }).catch(error => {
+                console.error('[UI] Error marking acknowledgment:', error);
+            });
+            loadUrlInWebview(url);
+        };
     } else {
         scanTitle.textContent = 'Malicious Site';
         scanBadge.className = 'scan-badge badge-danger';
         scanBadge.textContent = 'Blocked';
         scanScore.querySelector('.score-circle')!.className = 'score-circle score-danger';
-        proceedBtn.style.display = 'none'; // Can't proceed
+        
+        console.log('[UI] Setting up Proceed with Caution button');
+        
+        // Add "Proceed with Caution" button for blocked sites
+        proceedBtn.style.display = 'block';
+        proceedBtn.textContent = '⚠️ Proceed with Caution';
+        proceedBtn.className = 'btn-primary btn-danger';
+        proceedBtn.onclick = async () => {
+            console.log('[UI] Proceed with Caution button clicked');
+            // Show safety guidelines before proceeding
+            await showSafetyGuidelines(url, assessment, tab);
+        };
     }
 
     // Update Details - show analysis method with cache indicator
@@ -766,7 +817,7 @@ function displayScanResults(assessment: any, decision: any, url: string, tab: Ta
             try {
                 const result = await window.electronAPI.forceRefresh(url) as any;
                 if (result.success && result.assessment && result.decision) {
-                    displayScanResults(result.assessment, result.decision, url, tab);
+                    await displayScanResults(result.assessment, result.decision, url, tab);
                 } else {
                     recheckBtn.textContent = '❌ Failed - Try Again';
                     recheckBtn.disabled = false;
@@ -788,6 +839,168 @@ function displayScanResults(assessment: any, decision: any, url: string, tab: Ta
             ? '💡 <em>Result from cache. Click "Re-check with AI" for fresh analysis.</em>'
             : '💡 <em>Analyzed with local rules. Click "Re-check with AI" for deeper AI analysis.</em>';
         indicatorsList.appendChild(cacheNote);
+    }
+}
+
+/**
+ * Show AI-generated safety guidelines for proceeding to a flagged site
+ */
+async function showSafetyGuidelines(url: string, assessment: any, tab: Tab): Promise<void> {
+    try {
+        // Disable button and show loading
+        proceedBtn.disabled = true;
+        proceedBtn.textContent = '⏳ Generating Guidelines...';
+
+        // Get safety guidelines from AI
+        const result = await window.electronAPI.getSafetyGuidelines(url, assessment) as any;
+
+        if (!result.success || !result.guidelines) {
+            throw new Error('Failed to generate guidelines');
+        }
+
+        const guidelines = result.guidelines;
+
+        // Create modal overlay
+        const modal = document.createElement('div');
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        `;
+
+        // Create modal content
+        const modalContent = document.createElement('div');
+        modalContent.style.cssText = `
+            background: #1e1e1e;
+            border: 2px solid #dc3545;
+            border-radius: 8px;
+            max-width: 700px;
+            max-height: 80vh;
+            overflow-y: auto;
+            padding: 30px;
+            color: #e0e0e0;
+        `;
+
+        // Build modal HTML
+        let html = `
+            <div style="text-align: center; margin-bottom: 25px;">
+                <h2 style="color: #dc3545; margin: 0 0 10px 0;">⚠️ Safety Guidelines</h2>
+                <div style="font-size: 12px; color: #999;">You are about to visit a flagged site at your own risk</div>
+                <div style="margin-top: 10px; padding: 10px; background: #2a2a2a; border-radius: 4px; font-size: 13px; word-break: break-all;">
+                    ${url}
+                </div>
+            </div>
+
+            <div style="background: #2a2a2a; padding: 20px; border-radius: 6px; margin-bottom: 20px;">
+                <h3 style="margin: 0 0 12px 0; color: #ffc107; font-size: 16px;">📋 Summary</h3>
+                <p style="margin: 0; line-height: 1.6;">${guidelines.summary}</p>
+            </div>
+
+            <div style="background: #2a2a2a; padding: 20px; border-radius: 6px; margin-bottom: 20px;">
+                <h3 style="margin: 0 0 12px 0; color: #dc3545; font-size: 16px;">🚫 DO NOT:</h3>
+                <ul style="margin: 0; padding-left: 20px; line-height: 1.8;">
+                    ${guidelines.doNots.map((item: string) => `<li>${item}</li>`).join('')}
+                </ul>
+            </div>
+
+            <div style="background: #2a2a2a; padding: 20px; border-radius: 6px; margin-bottom: 20px;">
+                <h3 style="margin: 0 0 12px 0; color: #ff9800; font-size: 16px;">⚠️ Warnings:</h3>
+                <ul style="margin: 0; padding-left: 20px; line-height: 1.8;">
+                    ${guidelines.warnings.map((item: string) => `<li>${item}</li>`).join('')}
+                </ul>
+            </div>
+
+            <div style="background: #2a2a2a; padding: 20px; border-radius: 6px; margin-bottom: 25px;">
+                <h3 style="margin: 0 0 12px 0; color: #17a2b8; font-size: 16px;">🔧 Technical Advice:</h3>
+                <ul style="margin: 0; padding-left: 20px; line-height: 1.8;">
+                    ${guidelines.technicalAdvice.map((item: string) => `<li>${item}</li>`).join('')}
+                </ul>
+            </div>
+
+            <div style="text-align: center; padding: 15px; background: #2a2a2a; border-radius: 6px; margin-bottom: 25px;">
+                <div style="font-size: 14px; color: #999; margin-bottom: 5px;">Risk Level</div>
+                <div style="font-size: 24px; font-weight: bold; color: #dc3545;">${guidelines.riskLevel.toUpperCase()}</div>
+            </div>
+
+            <div style="display: flex; gap: 15px; justify-content: center;">
+                <button id="cancel-proceed" style="
+                    padding: 12px 30px;
+                    background: #6c757d;
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    font-size: 14px;
+                    font-weight: 600;
+                ">Cancel</button>
+                <button id="confirm-proceed" style="
+                    padding: 12px 30px;
+                    background: #dc3545;
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    font-size: 14px;
+                    font-weight: 600;
+                ">I Understand, Proceed</button>
+            </div>
+
+            <div style="margin-top: 20px; text-align: center; font-size: 11px; color: #666;">
+                🤖 Guidelines ${result.fromCache ? 'from cache' : 'generated by AI'} • Visit at your own risk
+            </div>
+        `;
+
+        modalContent.innerHTML = html;
+        modal.appendChild(modalContent);
+        document.body.appendChild(modal);
+
+        // Button handlers
+        const cancelBtn = document.getElementById('cancel-proceed')!;
+        const confirmBtn = document.getElementById('confirm-proceed')!;
+
+        cancelBtn.onclick = () => {
+            document.body.removeChild(modal);
+            proceedBtn.disabled = false;
+            proceedBtn.textContent = '⚠️ Proceed with Caution';
+        };
+
+        confirmBtn.onclick = () => {
+            document.body.removeChild(modal);
+            // Mark domain as acknowledged for this session
+            window.electronAPI.markDomainAcknowledged(url).then(() => {
+                console.log('[UI] Domain marked as acknowledged');
+            }).catch(error => {
+                console.error('[UI] Error marking acknowledgment:', error);
+            });
+            showScanPanel(false);
+            loadUrlInWebview(url);
+        };
+
+    } catch (error) {
+        console.error('[UI] Failed to show safety guidelines:', error);
+        
+        // Fallback: just proceed with simple confirmation
+        const confirmed = confirm(
+            `⚠️ WARNING: This site has been flagged as malicious.\n\n` +
+            `Threats detected: ${assessment.threatType || 'Multiple threats'}\n\n` +
+            `Proceed at your own risk?`
+        );
+        
+        if (confirmed) {
+            showScanPanel(false);
+            loadUrlInWebview(url);
+        }
+        
+        proceedBtn.disabled = false;
+        proceedBtn.textContent = '⚠️ Proceed with Caution';
     }
 }
 
@@ -1087,7 +1300,8 @@ function showDownloadNotification(fileName: string, message: string, type: 'info
 if (window.electronAPI && window.electronAPI.onOpenUrlInNewTab) {
     window.electronAPI.onOpenUrlInNewTab((url) => {
         console.log('[UI] Opening URL in new tab:', url);
-        tabManager.createTab(url, true);
+        const newTab = tabManager.createTab(null, true);
+        void tabManager.analyzeAndNavigate(newTab.id, url, 'link-click');
     });
     console.log('[UI] New tab URL listener registered');
 }

@@ -77,6 +77,27 @@ const electronAPI = {
     },
 
     /**
+     * Get safety guidelines for proceeding to a flagged site
+     */
+    getSafetyGuidelines: (url: string, assessment: any): Promise<unknown> => {
+        return ipcRenderer.invoke('security:getSafetyGuidelines', { url, assessment });
+    },
+
+    /**
+     * Check if domain has been acknowledged in this session
+     */
+    checkDomainAcknowledged: (url: string): Promise<{ acknowledged: boolean }> => {
+        return ipcRenderer.invoke('security:checkDomainAcknowledged', { url });
+    },
+
+    /**
+     * Mark domain as acknowledged for this session
+     */
+    markDomainAcknowledged: (url: string): Promise<{ success: boolean }> => {
+        return ipcRenderer.invoke('security:markDomainAcknowledged', { url });
+    },
+
+    /**
      * Listen for analysis results
      */
     onAnalysisResult: (callback: (result: unknown) => void): void => {
